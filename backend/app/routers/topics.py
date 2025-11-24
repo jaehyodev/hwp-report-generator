@@ -399,6 +399,148 @@ async def delete_topic(
         )
 
 
+@router.post("/generate", summary="Generate topic report synchronously")
+async def generate_topic_report(
+    topic_data: TopicCreate,
+    current_user: User = Depends(get_current_active_user)
+):
+    """토픽을 생성하고 즉시 보고서를 생성합니다."""
+
+    input_prompt = (topic_data.input_prompt or "").strip()
+    if not input_prompt:
+        return error_response(
+            code=ErrorCode.VALIDATION_REQUIRED_FIELD,
+            http_status=400,
+            message="입력 프롬프트가 비어있습니다.",
+            hint="보고서 주제를 1자 이상 입력해주세요."
+        )
+
+    try:
+        topic_payload = TopicCreate(
+            input_prompt=input_prompt,
+            language=topic_data.language,
+            template_id=topic_data.template_id
+        )
+    except Exception as e:
+        return error_response(
+            code=ErrorCode.VALIDATION_ERROR,
+            http_status=400,
+            message="요청 본문이 올바르지 않습니다.",
+            details={"error": str(e)}
+        )
+
+    try:
+        system_prompt = get_system_prompt(
+            template_id=topic_data.template_id,
+            user_id=current_user.id
+        )
+    except InvalidTemplateError as template_error:
+        return error_response(
+            code=template_error.code or ErrorCode.TEMPLATE_NOT_FOUND,
+            http_status=template_error.http_status,
+            message=template_error.message,
+            hint=template_error.hint
+        )
+
+    try:
+        topic = TopicDB.create_topic(current_user.id, topic_payload)
+        user_msg = MessageDB.create_message(
+            topic.id,
+            MessageCreate(role=MessageRole.USER, content=input_prompt)
+        )
+        claude_client = ClaudeClient()
+        claude_messages = [
+            create_topic_context_message(input_prompt),
+            {"role": "user", "content": input_prompt}
+        ]
+
+        start_time = time.time()
+        try:
+            response_text, input_tokens, output_tokens = claude_client.chat_completion(
+                claude_messages,
+                system_prompt=system_prompt,
+                isWebSearch=False
+            )
+        except Exception as claude_error:
+            logger.error(f"[GENERATE_SYNC] Claude error - {claude_error}")
+            return error_response(
+                code=ErrorCode.SERVER_SERVICE_UNAVAILABLE,
+                http_status=503,
+                message="AI 응답 생성 중 오류가 발생했습니다.",
+                details={"error": str(claude_error)},
+                hint="잠시 후 다시 시도해주세요."
+            )
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        parsed_content = parse_markdown_to_content(response_text)
+        built_markdown = build_report_md(parsed_content)
+        generated_title = parsed_content.get("title") or input_prompt
+
+        TopicDB.update_topic(
+            topic.id,
+            TopicUpdate(generated_title=generated_title)
+        )
+
+        assistant_msg = MessageDB.create_message(
+            topic.id,
+            MessageCreate(role=MessageRole.ASSISTANT, content=built_markdown)
+        )
+
+        version = next_artifact_version(topic.id, ArtifactKind.MD, topic.language)
+        _, md_path = build_artifact_paths(topic.id, version, "report.md")
+        bytes_written = write_text(md_path, built_markdown)
+        file_hash = sha256_of(md_path)
+        completed_at = datetime.utcnow().isoformat()
+
+        artifact = ArtifactDB.create_artifact(
+            topic_id=topic.id,
+            message_id=assistant_msg.id,
+            artifact_data=ArtifactCreate(
+                kind=ArtifactKind.MD,
+                locale=topic.language,
+                version=version,
+                filename="report.md",
+                file_path=str(md_path),
+                file_size=bytes_written,
+                sha256=file_hash,
+                status="completed",
+                progress_percent=100,
+                started_at=completed_at,
+                completed_at=completed_at
+            )
+        )
+
+        try:
+            AiUsageDB.create_ai_usage(
+                topic.id,
+                assistant_msg.id,
+                AiUsageCreate(
+                    model=claude_client.model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    latency_ms=latency_ms
+                )
+            )
+        except Exception as usage_error:
+            logger.error(f"[GENERATE_SYNC] Failed to save AI usage - error={usage_error}")
+
+        return success_response({
+            "topic_id": topic.id,
+            "artifact_id": artifact.id,
+            "message_id": assistant_msg.id,
+            "user_message_id": user_msg.id
+        })
+
+    except Exception as e:
+        logger.error(f"[GENERATE_SYNC] Failed to generate report - error={str(e)}", exc_info=True)
+        return error_response(
+            code=ErrorCode.SERVER_INTERNAL_ERROR,
+            http_status=500,
+            message="보고서 생성 중 오류가 발생했습니다.",
+            details={"error": str(e)}
+        )
+
+
 @router.post("/{topic_id}/ask", summary="Ask question in conversation - Artifact state machine")
 async def ask(
     topic_id: int,
@@ -709,10 +851,8 @@ async def ask(
 
     # === 7단계: 응답 형태 판별 ===
     logger.info(f"[ASK] Detecting response type")
-    # TODO: is report 판별 로직 개선 필요
     try:
-        #is_report = is_report_content(response_text)
-        is_report = True  # 항상 보고서로 간주 임시 
+        is_report = is_report_content(response_text)
     except Exception as detector_error:
         logger.warning(
             f"[ASK] Failed to detect response type, defaulting to report - error={detector_error}"
@@ -1013,7 +1153,7 @@ async def generate_report_background(
                 filename="report.md",  # ✅ MD 파일명
                 file_path=None,  # ✅ NULL during work
                 file_size=0,
-                status="scheduled",  # ✅ Scheduled state
+                status="generating",  # 즉시 generating 상태
                 progress_percent=0,
                 started_at=datetime.utcnow().isoformat()
             )

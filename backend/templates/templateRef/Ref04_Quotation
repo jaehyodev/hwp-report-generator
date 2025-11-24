@@ -1,0 +1,10 @@
+    <hp:p id="2147483648"
+          paraPrIDRef="4"
+          styleIDRef="0"
+          pageBreak="0"
+          columnBreak="0"
+          merged="0">
+        <hp:run charPrIDRef="17">
+            <hp:t>＊<!-- BlockQuote_Start --> BlockQuote <!-- BlockQuote_End --></hp:t>
+        </hp:run>
+    </hp:p>

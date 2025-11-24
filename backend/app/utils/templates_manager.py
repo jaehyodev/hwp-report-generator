@@ -132,7 +132,7 @@ class TemplatesManager:
         return placeholders
 
     def has_duplicate_placeholders(self, placeholder_keys: List[str]) -> bool:
-        """Checks if there are duplicate placeholders.
+        """Checks if there are duplicate placeholders while preserving order.
 
         Args:
             placeholder_keys: List of placeholder keys
@@ -147,11 +147,12 @@ class TemplatesManager:
             >>> print(has_dup)
             True
         """
-        if not placeholder_keys:
-            return False
-
-        # Convert to set: if set size < list size, there are duplicates
-        return len(set(placeholder_keys)) < len(placeholder_keys)
+        seen = set()
+        for key in placeholder_keys:
+            if key in seen:
+                return True
+            seen.add(key)
+        return False
 
     def get_duplicate_placeholders(self, placeholder_keys: List[str]) -> List[str]:
         """Gets list of duplicate placeholder keys.
@@ -170,15 +171,16 @@ class TemplatesManager:
             ['{{TITLE}}', '{{SUMMARY}}']
         """
         seen = set()
-        duplicates = set()
+        duplicates: List[str] = []
 
         for key in placeholder_keys:
-            if key in seen:
-                duplicates.add(key)
+            if key in seen and key not in duplicates:
+                # Preserve the order in which duplicates are first detected
+                duplicates.append(key)
             else:
                 seen.add(key)
 
-        return list(duplicates)
+        return duplicates
 
     def save_template_file(self, temp_file_path: str, user_id: int, template_id: int) -> str:
         """Moves temporary template file to final storage location.

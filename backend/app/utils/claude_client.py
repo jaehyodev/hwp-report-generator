@@ -9,7 +9,7 @@ from anthropic import Anthropic
 
 # shared.constants를 import하면 자동으로 sys.path 설정됨
 from shared.constants import ClaudeConfig
-from app.utils.prompts import get_default_report_prompt
+from app.utils.prompts import get_default_report_prompt, FINANCIAL_REPORT_SYSTEM_PROMPT
 
 # 로깅 설정
 logging.basicConfig(
@@ -64,7 +64,7 @@ class ClaudeClient:
     def generate_report(
         self,
         topic: str,
-        user_prompt: str,
+        plan_text: Optional[str] = None,
         system_prompt: Optional[str] = None,
         isWebSearch: bool = False
     ) -> str:
@@ -87,6 +87,17 @@ class ClaudeClient:
         """
         base_system_prompt = system_prompt or get_default_report_prompt()
 
+        user_prompt_parts: list[str] = [f"보고서 주제: {topic}".strip()]
+        if plan_text:
+            safe_plan = plan_text.strip()
+            if len(safe_plan) > MAX_PLAN_CHARS:
+                logger.warning(
+                    f"Plan text truncated from {len(safe_plan)} to {MAX_PLAN_CHARS} chars"
+                )
+                safe_plan = safe_plan[:MAX_PLAN_CHARS]
+            user_prompt_parts.append("보고서 계획:\n" + safe_plan)
+
+        user_prompt = "\n\n".join(part for part in user_prompt_parts if part).strip()
 
         try:
             logger.info(f"Claude API 호출 시작 - 주제: {topic}")
@@ -134,13 +145,34 @@ class ClaudeClient:
                 )
 
             # text 타입 content_block 이 여러 개일 수 있으므로 모두 수집 후 합치기
-            text_blocks = []
+            text_blocks: list[str] = []
             for content_block in message.content:
-                block_type = getattr(content_block, "type", None)
                 block_text = getattr(content_block, "text", None)
 
-                if block_text and (block_type == "text" or block_type is None):
+                if isinstance(block_text, str) and block_text:
                     text_blocks.append(block_text)
+                    continue
+
+                if isinstance(block_text, dict):
+                    candidate = block_text.get("text")
+                    if isinstance(candidate, str) and candidate:
+                        text_blocks.append(candidate)
+                        continue
+
+                if callable(block_text):
+                    try:
+                        candidate = block_text()
+                        if isinstance(candidate, str) and candidate:
+                            text_blocks.append(candidate)
+                            continue
+                    except Exception:
+                        pass
+
+                if isinstance(content_block, dict):
+                    candidate = content_block.get("text")
+                    if isinstance(candidate, str) and candidate:
+                        text_blocks.append(candidate)
+                        continue
 
             if not text_blocks:
                 raise ValueError(
@@ -160,8 +192,8 @@ class ClaudeClient:
             logger.info(f"토큰 사용량 - Input: {message.usage.input_tokens}, Output: {message.usage.output_tokens}")
 
             # 토큰 사용량 저장
-            self.last_input_tokens = message.usage.input_tokens
-            self.last_output_tokens = message.usage.output_tokens
+            self.last_input_tokens = getattr(message.usage, "input_tokens", 0)
+            self.last_output_tokens = getattr(message.usage, "output_tokens", 0)
             self.last_total_tokens = self.last_input_tokens + self.last_output_tokens
 
             # Markdown 텍스트 그대로 반환 (파싱은 호출자가 수행)
@@ -282,13 +314,34 @@ class ClaudeClient:
                 )
 
             # text 타입 content_block 이 여러 개일 수 있으므로 모두 수집 후 합치기
-            text_blocks = []
+            text_blocks: list[str] = []
             for content_block in response.content:
-                block_type = getattr(content_block, "type", None)
                 block_text = getattr(content_block, "text", None)
 
-                if block_text and (block_type == "text" or block_type is None):
+                if isinstance(block_text, str) and block_text:
                     text_blocks.append(block_text)
+                    continue
+
+                if isinstance(block_text, dict):
+                    candidate = block_text.get("text")
+                    if isinstance(candidate, str) and candidate:
+                        text_blocks.append(candidate)
+                        continue
+
+                if callable(block_text):
+                    try:
+                        candidate = block_text()
+                        if isinstance(candidate, str) and candidate:
+                            text_blocks.append(candidate)
+                            continue
+                    except Exception:
+                        pass
+
+                if isinstance(content_block, dict):
+                    candidate = content_block.get("text")
+                    if isinstance(candidate, str) and candidate:
+                        text_blocks.append(candidate)
+                        continue
 
             if not text_blocks:
                 raise ValueError(
@@ -420,13 +473,36 @@ class ClaudeClient:
             if not response.content:
                 raise ValueError(f"Claude API 응답이 비어있습니다")
 
-            text_content = None
+            text_blocks: list[str] = []
             for content_block in response.content:
-                if hasattr(content_block, 'text'):
-                    text_content = content_block.text
-                    break
+                block_text = getattr(content_block, "text", None)
 
-            if not text_content:
+                if isinstance(block_text, str) and block_text:
+                    text_blocks.append(block_text)
+                    continue
+
+                if isinstance(block_text, dict):
+                    candidate = block_text.get("text")
+                    if isinstance(candidate, str) and candidate:
+                        text_blocks.append(candidate)
+                        continue
+
+                if callable(block_text):
+                    try:
+                        candidate = block_text()
+                        if isinstance(candidate, str) and candidate:
+                            text_blocks.append(candidate)
+                            continue
+                    except Exception:
+                        pass
+
+                if isinstance(content_block, dict):
+                    candidate = content_block.get("text")
+                    if isinstance(candidate, str) and candidate:
+                        text_blocks.append(candidate)
+                        continue
+
+            if not text_blocks:
                 raise ValueError(f"Claude API에서 텍스트를 찾을 수 없습니다")
 
             # 토큰 저장
@@ -438,6 +514,8 @@ class ClaudeClient:
             self.last_total_tokens = input_tokens + output_tokens
 
             logger.info(f"응답 완료 - {model_name}, Input: {input_tokens}, Output: {output_tokens}")
+
+            text_content = "\n\n".join(text_blocks)
 
             return text_content, input_tokens, output_tokens
 

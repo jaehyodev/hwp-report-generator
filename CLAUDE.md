@@ -392,3 +392,105 @@ task.add_done_callback(handle_task_result)
 **마지막 업데이트:** 2025-11-14
 **버전:** 2.5.0
 **상태:** ✅ Event Loop Non-Blocking + Task Exception Handling 완성
+
+### v2.6 (2025-11-20) - Markdown to HWPX 변환 기능
+
+✅ **신규 엔드포인트: POST /api/artifacts/{artifact_id}/convert-hwpx**
+- Artifact ID 기반 직접 HWPX 변환 다운로드
+- 기존 GET /api/messages/{message_id}/hwpx/download와 차별화 (직접 경로)
+- 권한 검증, artifact 종류 검증, 30초 타임아웃 포함
+
+✅ **마크다운 파싱 엔진 (parse_markdown_to_md_elements)**
+- 마크다운을 MdElement 리스트로 구조화
+- FilterContext 기반 필터링 (코드블록, 테이블, 이미지, 링크, 체크박스, HTML 태그)
+- 타입 분류: TITLE, SECTION, ORDERED_LIST_DEP1/DEP2, UNORDERED_LIST_DEP1/DEP2, QUOTATION, NORMAL_TEXT, HORIZON_LINE, NO_CONVERT
+- 깊이 감지: 들여쓰기 칸 수로 DEP1(0칸) vs DEP2(>=2칸) 판별
+
+✅ **HWPX 변환 유틸리티 (md_to_hwpx_converter.py)**
+- escape_xml(): XML 특수문자 이스케이프 (&, <, >, ", ')
+- load_template(): HWPX 템플릿 로드 & 압축해제 (tempfile 사용)
+- apply_markdown_to_hwpx(): MD 요소 → section0.xml 적용
+  - ⭐ Ref 파일은 읽기만 (원본 수정 금지)
+  - HTML 주석 보존, 내부 값만 교체
+  - <!-- Content Start --> ~ <!-- Content End --> 사이에 순차 추가
+- create_hwpx_file(): HWPX 재압축 (HWPX 표준: mimetype ZIP_STORED)
+- convert_markdown_to_hwpx(): 통합 변환 함수
+
+✅ **데이터 모델 (convert_models.py)**
+- MdType Enum: 10개 마크다운 요소 타입
+- MdElement: 파싱된 마크다운 요소
+- FilterContext: 필터링 컨텍스트
+- ConvertResponse: HWPX 변환 응답
+
+✅ **테스트 커버리지 (13개 TC)**
+- Unit 테스트 (7개): 파싱, 플레이스홀더, 특수문자, 오탐 방지
+- Integration 테스트 (1개): 전체 변환 프로세스
+- API 테스트 (5개): 권한, 종류, 필터링, 성능, 404
+
+### 신규 API 엔드포인트
+
+**POST /api/artifacts/{artifact_id}/convert-hwpx**
+```
+요청:
+- Path: artifact_id (정수)
+- Headers: Authorization (JWT)
+
+응답 (성공):
+- 200 OK: HWPX 파일 (FileResponse, application/x-hwpx)
+- Body: 바이너리 파일 (다운로드)
+
+응답 (오류):
+- 404 NOT_FOUND: artifact_id 유효하지 않음
+- 403 FORBIDDEN: 사용자 권한 없음 (topic 소유자/관리자 아님)
+- 400 BAD_REQUEST: artifact 종류가 MD 아님
+- 504 GATEWAY_TIMEOUT: 변환 시간 > 30초
+```
+
+### 신규 파일
+
+| 파일 | 내용 | 라인 수 |
+|------|------|--------|
+| backend/app/models/convert_models.py | MdType, MdElement, FilterContext, ConvertResponse | 76 |
+| backend/app/utils/markdown_parser.py | parse_markdown_to_md_elements() + 필터링 함수들 | 600+ |
+| backend/app/utils/md_to_hwpx_converter.py | escape_xml, load_template, apply_markdown_to_hwpx, create_hwpx_file, convert_markdown_to_hwpx | 400+ |
+| backend/tests/test_convert.py | 13개 테스트 케이스 (Unit, Integration, API) | 550+ |
+
+### 변경 파일
+
+| 파일 | 변경 내용 |
+|------|---------|
+| backend/app/routers/artifacts.py | 신규 엔드포인트 추가: POST /api/artifacts/{artifact_id}/convert-hwpx (Line 441+) |
+
+### 구현 상세 (스펙 준수)
+
+**마크다운 필터링 전략** (필터링 보고서 기반):
+- 필터링 대상 (NO_CONVERT): 코드블록(```/~~~), 테이블(|...|), 이미지(![...]()), 링크([...]()), 체크박스(- [ ]), HTML 위험 태그(<script>, <style> 등)
+- 필터링 안 함: 인용(>), 수평선(---) → 파싱되어 artifact에 포함
+
+**Ref 파일 처리** (⭐ 핵심):
+- 각 타입별 Ref 파일은 읽기만 수행 (원본 수정 금지)
+- Ref 파일 내용을 메모리에 로드
+- 메모리에서만 플레이스홀더 교체 (예: <!-- XXX_Start -->값<!-- XXX_End -->)
+- 교체된 내용만 section0.xml에 저장
+- 다른 한글 문서 작성 시 Ref 파일 재사용 가능
+
+**타입별 Ref 파일 매핑**:
+- SECTION → Ref_01_Section
+- ORDERED_LIST_DEP1 → Ref07_OrderedList_dep1
+- ORDERED_LIST_DEP2 → Ref08_OrderedList_dep2
+- UNORDERED_LIST_DEP1 → Ref05_UnOrderedList_dep1
+- UNORDERED_LIST_DEP2 → Ref06_UnOrderedList_dep2
+- QUOTATION → Ref04_Quotation
+- NORMAL_TEXT → Ref02_NormalText
+- HORIZON_LINE → Ref03_HorizonLine
+
+### Unit Spec
+- 파일: `backend/doc/specs/20251120_md_to_hwpx_conversion.md`
+- 11개 섹션: 요구사항, 흐름도, 동작 상세, 13개 TC, 에러 처리, 기술 스택, 함수 설계, 사용자 요청 기록, 구현 체크리스트, 가정사항, 참고자료
+- 누적 수정 내용: 9차 (API 엔드포인트 위치 변경) - backend/app/routers/artifacts.py에 직접 추가
+
+---
+
+**마지막 업데이트:** 2025-11-20
+**버전:** 2.6.0
+**상태:** ✅ Markdown to HWPX 변환 기능 완성

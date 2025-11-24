@@ -26,11 +26,13 @@ def build_report_md(parsed: Dict[str, str]) -> str:
     t_con = parsed.get("title_conclusion", "결론 및 제언")
     con = parsed.get("conclusion", "")
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    generated_at = parsed.get("generated_at")
+    if not generated_at:
+        generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M")
 
     parts = [
         f"# {title}",
-        f"_생성일: {now}_\n",
+        f"_생성일: {generated_at}_\n",
         f"## {t_sum}",
         sumv.strip(),
         f"\n## {t_bg}",
@@ -42,4 +44,3 @@ def build_report_md(parsed: Dict[str, str]) -> str:
         "",
     ]
     return "\n\n".join(parts)
-

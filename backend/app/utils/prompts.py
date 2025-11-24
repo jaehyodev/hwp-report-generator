@@ -7,16 +7,36 @@ logger = logging.getLogger(__name__)
 
 
 REPORT_BASE_PROMPT = """당신은 금융 기관의 전문 보고서 작성자입니다.
-사용자가 제공하는 주제에 대해 금융 업무보고서를 작성해주세요.
+사용자가 제공하는 주제에 대해 **Markdown 형식의 금융 업무보고서**를 작성합니다.
 
-보고서 작성 지침: 
-- 각 섹션은 Markdown heading으로 시작하세요
-- 마크다운 형식을 엄격히 준수하세요
-- 위에 명시된 placeholder와 heading 구조를 정확히 따르세요.(placeholder 임의 추가 금지)
-- 각 섹션별 지침을 참고하여 정확하게 작성하세요
-- 금융 용어와 데이터를 적절히 활용하여 신뢰성을 높여주세요
-- 전문적이고 격식있는 문체로 작성하되, 명확하고 이해하기 쉽게 작성해주세요
-- 보고서에 의미 없는 내용이나 중복된 내용을 포함하지 마세요
+이 보고서는 **아래 모든 규칙을 절대적으로 준수하여 작성**해야 합니다.
+
+---
+
+## **Markdown 절대 규칙**
+
+1. `#`(H1)은 **보고서 전체에서 단 1회만 사용**한다.
+2. 모든 `##`(H2)는 **반드시 번호 + 마침표 + 제목**의 형태로 작성한다.
+
+   * 예시: `##1. 제목`, `##2. 내용`
+3. H2 제목은 **13자 이하**로 작성한다.
+
+   * placeholder 내용이 길 경우, 반드시 13자 이하로 **자동 요약하여 제목으로 사용**한다.
+4. 인용( `>` )은 **한 단계만 사용**하며, **중첩 금지**다.
+5. unordered list(`-`)와 ordered list(`1.`)는 모두 **최대 2단계까지만 사용**한다.
+6. 다음 요소는 **절대 사용하지 않는다:**
+
+   * Table
+   * Code block
+   * Checkbox
+   * Link(URL 포함 모든 형태)
+   * Image
+   * Border(테두리 강조 블록)
+7. 아래 템플릿 외의 Markdown heading 은 **추가하지 않는다.**
+8. 아래 “섹션별 상세 지침”은 설명용이며 **출력에 포함하지 않는다.**
+9. `###`(H3)은 절대 사용하지 않고 ordered list(`1.`)로 대처한다.
+10. 이모티콘을 사용하지 않는다.
+
 """
 
 
@@ -123,12 +143,39 @@ def _extract_placeholder_keys(placeholders: Iterable[Any]) -> list[str]:
 
 
 def _build_markdown_rules(placeholders: ListType[str]) -> str:
-    markdown_rules = ["**출력은 반드시 다음 Markdown 형식을 사용하세요:**"]
-    for index, placeholder in enumerate(placeholders):
-        heading = "#" if index == 0 else "##"
-        literal = f"{{{{{placeholder}}}}}"
-        level = "H1" if index == 0 else "H2"
-        markdown_rules.append(f"- {heading} {literal} ({level})")
+    cleaned = []
+    for placeholder in placeholders:
+        if not placeholder:
+            continue
+        stripped = placeholder.strip()
+        if not stripped:
+            continue
+        normalized = stripped.replace("{{", "").replace("}}", "").strip()
+        if not normalized:
+            continue
+        cleaned.append(normalized)
+    if not cleaned:
+        return ""
+
+    sections: list[str] = []
+    for index, name in enumerate(cleaned):
+        literal = f"{{{{{name}}}}}"
+        if index == 0:
+            sections.append(f"# {literal}")
+            sections.append("")
+            continue
+
+        sections.append(f"##{index}. {literal}")
+        sections.append("(본문)")
+        sections.append("")
+
+    while sections and sections[-1] == "":
+        sections.pop()
+
+    markdown_rules = ["**출력 템플릿 구조(엄격히 준수)** ","보고서는 아래 구조와 순서로 작성한다:"
+                      , "```", *sections, "```" 
+                      ,"※ 각 {{placeholder}}는 출력 시 **의미에 맞는 실제 보고서 내용으로 대체**됨."
+                      ," ※ H2 제목은 항상 **13자 이하로 변환된 제목 문구**로 표현해야 한다."]
     return "\n".join(markdown_rules)
 
 
@@ -186,6 +233,9 @@ def create_dynamic_system_prompt(placeholders: list) -> str:
     keys = _extract_placeholder_keys(placeholders)
     rules = DEFAULT_REPORT_RULES if not keys else create_template_specific_rules([f"{{{{{key}}}}}" for key in keys])
     return _combine_prompts(get_base_report_prompt(), rules)
+
+# 기본 금융 보고서 시스템 프롬프트
+FINANCIAL_REPORT_SYSTEM_PROMPT = get_default_report_prompt()
 
 # ============================================================
 # get_system_prompt() - 우선순위 기반 System Prompt 선택
@@ -325,54 +375,96 @@ def create_system_prompt_with_metadata(
     return prompt
 
 
+TITLE_GROUP_KEYS = {
+    "TITLE_BACKGROUND",
+    "TITLE_MAIN_CONTENT",
+    "TITLE_SUMARY",
+    "TITLE_CONCLUSION",
+}
+
+PLACEHOLDER_DESCRIPTIONS: DictType[str, str] = {
+    "TITLE": "보고서 전체 제목.",
+    "BACKGROUND": "보고서 배경, 문제 맥락, 시장 환경 설명.",
+    "MAIN_CONTENT": "핵심 분석 내용, 주요 지표, 발견사항.",
+    "SUMARY": "전체 내용을 2~3문단으로 압축한 요약.",
+    "CONCLUSION": "최종 결론, 전망, 전략적 제언.",
+    "TITLE_GROUP": "섹션 제목으로 사용되는 짧은 문구. (반드시 13자 이하)",
+    "DATE": "보고서 작성 또는 발행 날짜.",
+}
+
+# SUMMARY 철자를 사용하는 템플릿도 지원
+PLACEHOLDER_DESCRIPTIONS["SUMMARY"] = PLACEHOLDER_DESCRIPTIONS["SUMARY"]
+
+
+def _normalize_placeholder_key(placeholder: str) -> str:
+    """Placeholder 문자열을 {{ }} 제거 후 비교 가능한 키로 정규화."""
+    return placeholder.replace("{{", "").replace("}}", "").strip().upper()
+
+
 def _format_metadata_sections(
     placeholders: ListType[str],
     metadata: Optional[ListType[DictType[str, Any]]] = None,
 ) -> str:
-    """
-    메타정보 섹션 포매팅.
-
-    각 Placeholder에 대한 메타정보를 읽기 좋은 형식으로 정렬합니다.
-    """
-    if not metadata:
+    """메타정보 섹션 포매팅 (placeholder 순서를 보존)."""
+    if not placeholders:
         return "(메타정보 미생성 - 기본 지침을 참고하세요)"
 
-    # 메타정보를 key로 인덱싱하여 빠르게 조회
-    metadata_map = {item.get("key"): item for item in metadata}
+    metadata_map: DictType[str, DictType[str, Any]] = {}
+    for item in metadata or []:
+        raw_key = str(item.get("key", "")).strip()
+        normalized_key = _normalize_placeholder_key(raw_key) if raw_key else ""
+        if raw_key:
+            metadata_map[raw_key] = item
+        if normalized_key and normalized_key not in metadata_map:
+            metadata_map[normalized_key] = item
 
-    sections = []
-    for placeholder in placeholders:
-        item = metadata_map.get(placeholder)
+    sections: list[str] = []
+    processed_keys: set[str] = set()
+    title_group_printed = False
 
-        if not item:
-            # 메타정보 없는 Placeholder는 건너뛰기
-            logger.warning(
-                f"[PROMPT] Metadata not found for placeholder: {placeholder}"
-            )
-            sections.append(f"### {placeholder}\n(메타정보 미생성)")
+    def _get_description(key: str, placeholder: str) -> str:
+        desc = PLACEHOLDER_DESCRIPTIONS.get(key)
+        if desc:
+            return desc
+        metadata_item = metadata_map.get(placeholder) or metadata_map.get(key)
+        if metadata_item:
+            meta_desc = metadata_item.get("description")
+            if meta_desc:
+                return meta_desc
+        return "해당 섹션에 필요한 내용을 간결히 요약하세요."
+
+    for idx, placeholder in enumerate(placeholders):
+        normalized_key = _normalize_placeholder_key(placeholder)
+        if not normalized_key or normalized_key in processed_keys:
             continue
 
-        display_name = item.get("display_name", "N/A")
-        description = item.get("description", "N/A")
-        examples = item.get("examples", [])
-        required = item.get("required", False)
+        if normalized_key in TITLE_GROUP_KEYS:
+            if title_group_printed:
+                continue
+            grouped_placeholders: list[str] = []
+            seen_group_keys: set[str] = set()
+            for item in placeholders[idx:]:
+                group_key = _normalize_placeholder_key(item)
+                if group_key in TITLE_GROUP_KEYS and group_key not in seen_group_keys:
+                    grouped_placeholders.append(item)
+                    seen_group_keys.add(group_key)
+            if not grouped_placeholders:
+                continue
+            placeholder_text = ", ".join(grouped_placeholders)
+            sections.append(
+                f"* **{placeholder_text}**\n  {_get_description('TITLE_GROUP', placeholder)}"
+            )
+            processed_keys.update(seen_group_keys)
+            title_group_printed = True
+            continue
 
-        # 예시 포매팅
-        examples_str = _format_examples(examples)
+        sections.append(f"* **{placeholder}**\n  {_get_description(normalized_key, placeholder)}")
+        processed_keys.add(normalized_key)
 
-        # 섹션 구성
-        section = f"""### {placeholder} ({display_name})
+    if not sections:
+        return "(메타정보 미생성 - 기본 지침을 참고하세요)"
 
-**설명:** {description}
-
-**예시:**
-{examples_str}
-
-**필수 여부:** {'필수' if required else '선택'}"""
-
-        sections.append(section)
-
-    return "\n\n".join(sections)
+    return "\n".join(sections)
 
 
 def _format_examples(examples: Optional[ListType[str]]) -> str:

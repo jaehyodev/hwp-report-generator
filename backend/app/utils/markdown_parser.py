@@ -2,7 +2,284 @@
 Markdown 파일을 파싱하여 HWPHandler에 필요한 content dict로 변환
 """
 import re
-from typing import Dict, Tuple, List
+from typing import Dict, List, Optional, Tuple
+
+from app.models.convert_models import FilterContext, MdElement, MdType
+
+PATTERNS = {
+    "code_block_start": re.compile(r"^\s*(`{3,}|~{3,})"),
+    "table_separator": re.compile(r"^\s*\|[\s:|-]+\|"),
+    "inline_link": re.compile(r"(?<!\\)\[([^\[\]]*)\]\(([^)]+)\)"),
+    "ref_link": re.compile(r"\[([^\[\]]*)\]\[([^\]]*)\]"),
+    "auto_link": re.compile(r"<([^>]+)>"),
+    "image": re.compile(r"!\[([^\[\]]*)\]\(([^)]+)\)"),
+    "checkbox": re.compile(r"^\s*[-*]\s+\[[\sx]\]\s+"),
+    "html_tag": re.compile(r"<(script|style|iframe|embed|object)[^>]*>", re.IGNORECASE),
+    "h1": re.compile(r"^#\s+(.+)$"),
+    "h2": re.compile(r"^##\s+(.+)$"),
+    "ordered_list": re.compile(r"^(\s*)\d+\.\s+(.+)$"),
+    "unordered_list": re.compile(r"^(\s*)[-*]\s+(.+)$"),
+    "quotation": re.compile(r"^>\s+(.+)$"),
+    "horizon_line": re.compile(r"^(---+|\*\*\*+|___+)$"),
+}
+
+REF_DEFINITION_PATTERN = re.compile(r"^\s*\[[^\]]+\]:\s*\S+")
+
+REF_FILENAME_MAP = {
+    MdType.SECTION: "Ref_01_Section",
+    MdType.ORDERED_LIST_DEP1: "Ref07_OrderedList_dep1",
+    MdType.ORDERED_LIST_DEP2: "Ref08_OrderedList_dep2",
+    MdType.UNORDERED_LIST_DEP1: "Ref05_UnOrderedList_dep1",
+    MdType.UNORDERED_LIST_DEP2: "Ref06_UnOrderedList_dep2",
+    MdType.QUOTATION: "Ref04_Quotation",
+    MdType.NORMAL_TEXT: "Ref02_NormalText",
+    MdType.HORIZON_LINE: "Ref03_HorizonLine",
+}
+
+
+def extract_code_blocks(lines: List[str]) -> List[Tuple[int, int]]:
+    """Extract fenced code blocks as inclusive line ranges.
+
+    Args:
+        lines: Markdown content split by newline.
+
+    Returns:
+        Start/end line index pairs for each detected code block.
+    """
+
+    code_blocks: List[Tuple[int, int]] = []
+    in_block = False
+    block_start = 0
+    fence_char: Optional[str] = None
+
+    for idx, line in enumerate(lines):
+        match = PATTERNS["code_block_start"].match(line)
+        if not match:
+            continue
+
+        current_char = match.group(1)[0]
+        if not in_block:
+            # Mark the beginning of a fenced block and remember the fence type.
+            in_block = True
+            block_start = idx
+            fence_char = current_char
+            continue
+
+        # Only close blocks that use the same fence character.
+        if fence_char == current_char:
+            code_blocks.append((block_start, idx))
+            in_block = False
+            fence_char = None
+
+    if in_block:
+        # Unterminated fences extend to the final line.
+        code_blocks.append((block_start, len(lines) - 1 if lines else 0))
+
+    return code_blocks
+
+
+def extract_tables(lines: List[str]) -> List[Tuple[int, int]]:
+    """Extract GitHub-style tables as line ranges.
+
+    Args:
+        lines: Markdown content split by newline.
+
+    Returns:
+        Start/end line index pairs for each table.
+    """
+
+    def _is_table_row(candidate: str) -> bool:
+        stripped = candidate.strip()
+        if not stripped.startswith("|") or not stripped.endswith("|"):
+            return False
+        # Require at least two cell separators to avoid | in plain text.
+        return stripped.count("|") >= 3
+
+    def _parse_cells(candidate: str) -> List[str]:
+        stripped = candidate.strip()
+        if not (stripped.startswith("|") and stripped.endswith("|")):
+            return []
+        return [cell.strip() for cell in stripped.split("|")[1:-1]]
+
+    def _is_valid_table(start_idx: int, end_idx: int) -> bool:
+        if start_idx >= len(lines) or start_idx + 1 >= len(lines):
+            return False
+        header_cells = _parse_cells(lines[start_idx])
+        separator_cells = _parse_cells(lines[start_idx + 1])
+        if len(header_cells) < 2 or len(header_cells) != len(separator_cells):
+            return False
+        # Ensure separator cells contain at least one dash each.
+        for cell in separator_cells:
+            if "-" not in cell.replace(":", ""):
+                return False
+        # Verify data rows (if present) keep the same column count.
+        for row_idx in range(start_idx + 2, end_idx + 1):
+            row_cells = _parse_cells(lines[row_idx])
+            if row_cells and len(row_cells) != len(header_cells):
+                return False
+        return True
+
+    tables: List[Tuple[int, int]] = []
+    idx = 0
+    total = len(lines)
+
+    while idx < total - 1:
+        if not _is_table_row(lines[idx]):
+            idx += 1
+            continue
+
+        separator_line = lines[idx + 1]
+        if not PATTERNS["table_separator"].match(separator_line.strip()):
+            idx += 1
+            continue
+
+        start = idx
+        idx += 2
+        while idx < total and _is_table_row(lines[idx]):
+            idx += 1
+        end = idx - 1
+        if end <= start + 1:
+            # Require at least one data row; otherwise skip.
+            idx = start + 1
+            continue
+
+        if _is_valid_table(start, end):
+            tables.append((start, end))
+        else:
+            idx = start + 1
+            continue
+
+    return tables
+
+
+def _is_valid_auto_link(content: str) -> bool:
+    """Return True when the auto-link body looks like a real URL or email."""
+
+    candidate = content.strip()
+    lowered = candidate.lower()
+    if lowered.startswith(("http://", "https://", "ftp://", "mailto:")):
+        return True
+    return "@" in candidate and " " not in candidate
+
+
+def extract_link_lines(lines: List[str]) -> List[int]:
+    """Collect line numbers that contain Markdown links.
+
+    Args:
+        lines: Markdown content split by newline.
+
+    Returns:
+        Line numbers containing inline, reference, or auto links.
+    """
+
+    link_lines: List[int] = []
+    for idx, line in enumerate(lines):
+        # Inline link detection (e.g., [text](url)).
+        if PATTERNS["inline_link"].search(line):
+            link_lines.append(idx)
+            continue
+
+        # Reference style link usage (e.g., [text][ref]).
+        if PATTERNS["ref_link"].search(line):
+            link_lines.append(idx)
+            continue
+
+        auto_matches = list(PATTERNS["auto_link"].finditer(line))
+        if any(_is_valid_auto_link(match.group(1)) for match in auto_matches):
+            link_lines.append(idx)
+            continue
+
+        # Reference definition lines (e.g., [ref]: https://example.com).
+        if REF_DEFINITION_PATTERN.match(line.strip()):
+            link_lines.append(idx)
+
+    return link_lines
+
+
+def extract_image_lines(lines: List[str]) -> List[int]:
+    """Collect line numbers that contain inline images."""
+
+    return [idx for idx, line in enumerate(lines) if PATTERNS["image"].search(line)]
+
+
+def extract_html_lines(lines: List[str]) -> List[int]:
+    """Collect line numbers that include dangerous HTML tags."""
+
+    return [idx for idx, line in enumerate(lines) if PATTERNS["html_tag"].search(line)]
+
+
+def prepare_filter_context(md_content: str) -> FilterContext:
+    """Prepare a filter context before parsing Markdown lines.
+
+    Args:
+        md_content: Raw markdown content.
+
+    Returns:
+        A populated FilterContext used for constant-time lookups.
+    """
+
+    lines = md_content.split("\n")
+    return FilterContext(
+        code_blocks=extract_code_blocks(lines),
+        tables=extract_tables(lines),
+        link_lines=extract_link_lines(lines),
+        image_lines=extract_image_lines(lines),
+        html_lines=extract_html_lines(lines),
+    )
+
+
+def should_filter_element(line_no: int, filter_ctx: FilterContext) -> bool:
+    """Return True when a line should be marked as NO_CONVERT.
+
+    Args:
+        line_no: Zero-based line number.
+        filter_ctx: Pre-computed filter context.
+
+    Returns:
+        True when the line belongs to a filtered range.
+    """
+
+    # Range lookups for fences and tables are inclusive.
+    for start, end in filter_ctx.code_blocks:
+        if start <= line_no <= end:
+            return True
+
+    for start, end in filter_ctx.tables:
+        if start <= line_no <= end:
+            return True
+
+    if line_no in filter_ctx.link_lines:
+        return True
+
+    if line_no in filter_ctx.image_lines:
+        return True
+
+    if line_no in filter_ctx.html_lines:
+        return True
+
+    return False
+
+
+def _detect_list_depth(leading_whitespace: str) -> Optional[int]:
+    """Translate indentation into a supported list depth."""
+
+    spaces = len(leading_whitespace.replace("\t", "    "))
+    if spaces == 0:
+        return 1
+    if spaces >= 2:
+        return 2
+    return None
+
+
+def _build_element(md_type: MdType, content: str, number: Optional[int] = None) -> MdElement:
+    """Create an MdElement with an auto-mapped ref filename."""
+
+    return MdElement(
+        type=md_type,
+        content=content,
+        number=number,
+        ref_filename=REF_FILENAME_MAP.get(md_type),
+    )
 
 
 def markdown_to_plain_text(md_text: str) -> str:
@@ -256,3 +533,131 @@ def extract_title_from_markdown(md_text: str) -> str:
     if title_match:
         return title_match.group(1).strip()
     return "보고서"
+
+
+def parse_markdown_to_md_elements(md_content: str) -> List[MdElement]:
+    """Parse markdown lines into MdElement objects following Section 7.1.
+
+    Args:
+        md_content: Raw markdown string that should be converted.
+
+    Returns:
+        Ordered MdElement instances describing each convertible (or filtered) line.
+    """
+
+    lines = md_content.split("\n") if md_content else []
+    if not lines:
+        return []
+
+    filter_ctx = prepare_filter_context(md_content)
+    elements: List[MdElement] = []
+    title_added = False
+    section_number = 0
+    ordered_dep1_count = 0
+    ordered_dep2_count = 0
+    previous_type: Optional[MdType] = None
+
+    for idx, raw_line in enumerate(lines):
+        line = raw_line.rstrip("\r")
+        stripped_line = line.strip()
+
+        if not stripped_line:
+            previous_type = None
+            continue
+
+        is_checkbox_line = bool(PATTERNS["checkbox"].match(line))
+        if should_filter_element(idx, filter_ctx) or is_checkbox_line:
+            elements.append(MdElement(type=MdType.NO_CONVERT, content=stripped_line))
+            previous_type = MdType.NO_CONVERT
+            continue
+
+        # 1. Title (# Heading)
+        h1_match = PATTERNS["h1"].match(stripped_line)
+        if h1_match:
+            content = h1_match.group(1).strip()
+            if not title_added:
+                elements.append(MdElement(type=MdType.TITLE, content=content))
+                title_added = True
+                previous_type = MdType.TITLE
+            else:
+                section_number += 1
+                elements.append(
+                    _build_element(MdType.SECTION, content, number=section_number)
+                )
+                previous_type = MdType.SECTION
+            continue
+
+        # 2. Sections (## Heading)
+        h2_match = PATTERNS["h2"].match(stripped_line)
+        if h2_match:
+            section_number += 1
+            elements.append(
+                _build_element(MdType.SECTION, h2_match.group(1).strip(), number=section_number)
+            )
+            previous_type = MdType.SECTION
+            continue
+
+        # 3. Ordered lists
+        ordered_match = PATTERNS["ordered_list"].match(line)
+        if ordered_match:
+            depth = _detect_list_depth(ordered_match.group(1))
+            content = ordered_match.group(2).strip()
+            if depth == 1:
+                if previous_type != MdType.ORDERED_LIST_DEP1:
+                    ordered_dep1_count = 0
+                ordered_dep1_count += 1
+                elements.append(
+                    _build_element(
+                        MdType.ORDERED_LIST_DEP1,
+                        content,
+                        number=ordered_dep1_count,
+                    )
+                )
+                previous_type = MdType.ORDERED_LIST_DEP1
+                continue
+            if depth == 2:
+                if previous_type != MdType.ORDERED_LIST_DEP2:
+                    ordered_dep2_count = 0
+                ordered_dep2_count += 1
+                elements.append(
+                    _build_element(
+                        MdType.ORDERED_LIST_DEP2,
+                        content,
+                        number=ordered_dep2_count,
+                    )
+                )
+                previous_type = MdType.ORDERED_LIST_DEP2
+                continue
+
+        # 4. Unordered lists
+        unordered_match = PATTERNS["unordered_list"].match(line)
+        if unordered_match:
+            depth = _detect_list_depth(unordered_match.group(1))
+            content = unordered_match.group(2).strip()
+            if depth == 1:
+                elements.append(_build_element(MdType.UNORDERED_LIST_DEP1, content))
+                previous_type = MdType.UNORDERED_LIST_DEP1
+                continue
+            if depth == 2:
+                elements.append(_build_element(MdType.UNORDERED_LIST_DEP2, content))
+                previous_type = MdType.UNORDERED_LIST_DEP2
+                continue
+
+        # 5. Quotations
+        quote_match = PATTERNS["quotation"].match(stripped_line)
+        if quote_match:
+            elements.append(_build_element(MdType.QUOTATION, quote_match.group(1).strip()))
+            previous_type = MdType.QUOTATION
+            continue
+
+        # 6. Horizontal rules
+        if PATTERNS["horizon_line"].match(stripped_line):
+            elements.append(_build_element(MdType.HORIZON_LINE, stripped_line))
+            previous_type = MdType.HORIZON_LINE
+            continue
+
+        # 7. Fallback: normal text
+        elements.append(_build_element(MdType.NORMAL_TEXT, stripped_line))
+        previous_type = MdType.NORMAL_TEXT
+
+    return elements

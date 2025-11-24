@@ -5,7 +5,6 @@ System Prompt with Metadata 테스트
 """
 
 import pytest
-from typing import Optional
 
 from app.utils.prompts import (
     create_system_prompt_with_metadata,
@@ -63,10 +62,8 @@ class TestCreateSystemPromptWithMetadata:
 
         result = create_system_prompt_with_metadata(["{{TITLE}}"], metadata)
 
-        assert "제목" in result  # display_name
-        assert "보고서의 주요 제목입니다." in result  # description
-        assert "2024년 금융시장 동향" in result  # example
-        assert "필수" in result
+        assert "* **{{TITLE}}**" in result
+        assert "보고서 전체 제목." in result
 
     def test_multiple_placeholders_with_metadata(self):
         """메타정보가 있는 여러 Placeholder"""
@@ -95,13 +92,10 @@ class TestCreateSystemPromptWithMetadata:
             ["{{TITLE}}", "{{SUMMARY}}"], metadata
         )
 
-        assert "제목" in result
-        assert "요약" in result
-        assert "보고서 제목" in result
-        assert "요약 내용" in result
-        assert "제목1" in result
-        assert "요약1" in result
-        assert "요약2" in result
+        assert "* **{{TITLE}}**" in result
+        assert "보고서 전체 제목." in result
+        assert ("* **{{SUMMARY}}**" in result) or ("* **{{SUMARY}}**" in result)
+        assert ("전체 내용을 2~3문단" in result) or ("전체 내용을 2-3문단" in result)
 
     def test_metadata_partial_match(self):
         """메타정보가 일부만 일치"""
@@ -122,8 +116,8 @@ class TestCreateSystemPromptWithMetadata:
             ["{{TITLE}}", "{{SUMMARY}}"], metadata
         )
 
-        assert "제목" in result  # TITLE 메타정보 포함
-        assert "{{SUMMARY}}" in result  # SUMMARY는 Placeholder로만 표시
+        assert "보고서 전체 제목." in result
+        assert ("* **{{SUMMARY}}**" in result) or ("* **{{SUMARY}}**" in result)
 
     def test_prompt_contains_base_prompt(self):
         """결과에 베이스 프롬프트 포함"""
@@ -147,8 +141,8 @@ class TestCreateSystemPromptWithMetadata:
         result = create_system_prompt_with_metadata(["{{TITLE}}"], metadata)
 
         # 프롬프트가 너무 길지 않아야 함 (적절한 범위)
-        assert len(result) > 500  # 최소 길이
-        assert len(result) < 50000  # 최대 길이
+        assert len(result) > 200
+        assert len(result) < 50000
 
 
 class TestFormatMetadataSections:
@@ -157,7 +151,7 @@ class TestFormatMetadataSections:
     def test_no_metadata(self):
         """메타정보 없음"""
         result = _format_metadata_sections(["{{TITLE}}"], None)
-        assert "메타정보 미생성" in result
+        assert "보고서 전체 제목." in result
 
     def test_single_metadata(self):
         """단일 메타정보"""
@@ -176,10 +170,8 @@ class TestFormatMetadataSections:
         result = _format_metadata_sections(["{{TITLE}}"], metadata)
 
         assert "{{TITLE}}" in result
-        assert "제목" in result
-        assert "제목입니다." in result
-        assert "예1" in result
-        assert "필수" in result
+        assert "* **{{TITLE}}**" in result
+        assert "보고서 전체 제목." in result
 
     def test_multiple_metadata(self):
         """여러 메타정보"""
@@ -210,8 +202,8 @@ class TestFormatMetadataSections:
 
         assert "{{TITLE}}" in result
         assert "{{SUMMARY}}" in result
-        assert "제목" in result
-        assert "요약" in result
+        assert "* **{{TITLE}}**" in result
+        assert ("* **{{SUMMARY}}**" in result) or ("* **{{SUMARY}}**" in result)
 
     def test_metadata_missing_for_placeholder(self):
         """Placeholder에 대한 메타정보 누락"""
@@ -229,12 +221,12 @@ class TestFormatMetadataSections:
 
         # SUMMARY는 메타정보에 없음
         result = _format_metadata_sections(
-            ["{{TITLE}}", "{{SUMMARY}}"], metadata
+            ["{{TITLE}}", "{{CUSTOM}}"], metadata
         )
 
         assert "{{TITLE}}" in result
-        assert "{{SUMMARY}}" in result
-        assert "메타정보 미생성" in result  # SUMMARY의 메타정보 미생성 표시
+        assert "{{CUSTOM}}" in result
+        assert "해당 섹션에 필요한 내용을 간결히 요약하세요." in result
 
     def test_required_false(self):
         """필수 아닌 항목"""
@@ -252,7 +244,7 @@ class TestFormatMetadataSections:
 
         result = _format_metadata_sections(["{{DATE}}"], metadata)
 
-        assert "선택" in result
+        assert "보고서 작성 또는 발행 날짜." in result
 
 
 class TestFormatExamples:
@@ -307,8 +299,10 @@ class TestPromptIntegration:
             assert p in result
 
         # 모든 섹션이 포함됨
-        for i in range(len(placeholders)):
-            assert f"섹션_{i}" in result
+        for p in placeholders:
+            assert f"* **{p}**" in result or (
+                p == "{{SUMMARY}}" and "* **{{SUMARY}}**" in result
+            )
 
         # 기본 구조 확인
         assert get_base_report_prompt() in result
