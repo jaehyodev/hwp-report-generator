@@ -11,7 +11,7 @@ import time
 from typing import Dict, Optional, Any
 
 from app.utils.claude_client import ClaudeClient
-from app.utils.prompts import get_base_plan_prompt
+from app.utils.prompts import get_base_plan_prompt, get_advanced_planner_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,8 @@ async def sequential_planning(
     topic: str,
     template_id: Optional[int] = None,
     user_id: Optional[str] = None,
-    is_web_search: bool = False
+    is_web_search: bool = False,
+    is_template_used: bool = True
 ) -> Dict[str, Any]:
     """
     Sequential Planning을 이용한 보고서 계획 수립
@@ -42,6 +43,9 @@ async def sequential_planning(
         template_id: 사용할 템플릿 ID (선택, None이면 default 사용)
         user_id: 사용자 ID (template_id 지정 시 권한 확인용)
         is_web_search: Claude 웹 검색 도구 활성화 여부
+        is_template_used: If True, use template-based prompt (get_base_plan_prompt).
+                          If False, use advanced planner prompt (get_advanced_planner_prompt).
+                          Default: True
 
     Returns:
         {
@@ -75,8 +79,15 @@ async def sequential_planning(
 
     try:
         # 2. Template의 prompt_system 로드
-        # TODO: get_base_plan_prompt 결과가 왜 None이 되는지 조사 필요
-        guidance_prompt = get_base_plan_prompt()
+        # Select prompt based on is_template_used parameter
+        if is_template_used:
+            guidance_prompt = get_base_plan_prompt()
+        else:
+            guidance_prompt = get_advanced_planner_prompt()
+
+        # Replace placeholder if using advanced planner prompt
+        if not is_template_used:
+            guidance_prompt = guidance_prompt.replace("{{USER_TOPIC}}", topic)
 
         # 3. Input prompt 구성
         input_prompt = f"""요청 주제: {topic} {guidance_prompt} """

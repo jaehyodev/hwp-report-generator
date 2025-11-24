@@ -1019,14 +1019,15 @@ async def plan_report(
     start_time = time.time()
 
     try:
-        logger.info(f"[PLAN] Started - topic='{request.topic}', template_id={request.template_id}, user_id={current_user.id}")
+        logger.info(f"[PLAN] Started - topic='{request.topic}', template_id={request.template_id}, is_template_used={request.is_template_used}, user_id={current_user.id}")
 
         # Sequential Planning 호출
         plan_result = await sequential_planning(
             topic=request.topic,
             template_id=request.template_id,
             user_id=current_user.id,
-            is_web_search=request.is_web_search
+            is_web_search=request.is_web_search,
+            is_template_used=request.is_template_used
         )
 
         # 새로운 topic 생성 또는 기존 topic 조회

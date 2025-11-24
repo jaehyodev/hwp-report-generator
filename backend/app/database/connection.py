@@ -82,6 +82,9 @@ def init_db():
             generated_title TEXT,
             language TEXT NOT NULL DEFAULT 'ko',
             status TEXT NOT NULL DEFAULT 'active',
+            template_id INTEGER,
+            prompt_user TEXT,
+            prompt_system TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE

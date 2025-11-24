@@ -129,6 +129,8 @@ class PlanRequest(BaseModel):
     Attributes:
         topic: 보고서 주제 (필수, 최대 200자)
         template_id: 사용할 템플릿 ID (선택, None이면 default template 사용)
+        is_web_search: 웹 검색 도구 사용 여부 (기본값: false)
+        is_template_used: 템플릿 사용 여부 (기본값: true, false이면 template_id 무시)
     """
     topic: str = Field(..., min_length=1, max_length=200, description="보고서 주제")
     template_id: Optional[int] = Field(None, description="템플릿 ID (선택)")
@@ -137,6 +139,11 @@ class PlanRequest(BaseModel):
         alias="isWebSearch",
         description="웹 검색 도구 사용 여부 (기본값: false)"
     )
+    is_template_used: bool = Field(
+        default=True,
+        alias="isTemplateUsed",
+        description="템플릿 사용 여부 (기본값: true, false이면 template_id 무시)"
+    )
 
     class Config:
         populate_by_name = True
@@ -144,7 +151,8 @@ class PlanRequest(BaseModel):
             "example": {
                 "topic": "AI 시장 분석",
                 "template_id": 1,
-                "isWebSearch": True
+                "isWebSearch": True,
+                "isTemplateUsed": True
             }
         }
 
