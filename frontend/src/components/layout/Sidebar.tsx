@@ -40,7 +40,7 @@ const Sidebar: React.FC<SidebarProps> = ({isOpen, onToggle, onTopicSelect, onNew
         const fetchTopics = async () => {
             try {
                 await loadSidebarTopics()
-            } catch (error: any) {
+            } catch (error) {
                 message.error('토픽 목록을 불러오는데 실패했습니다.')
                 console.error('Failed to load topics:', error)
             }
@@ -67,10 +67,6 @@ const Sidebar: React.FC<SidebarProps> = ({isOpen, onToggle, onTopicSelect, onNew
             month: 'short',
             day: 'numeric'
         })
-    }
-
-    const handleLogoClick = () => {
-        navigate('/')
     }
 
     const handleAdminClick = () => {

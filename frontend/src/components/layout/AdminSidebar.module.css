@@ -57,7 +57,7 @@
 }
 
 .toggleBtn:hover {
-    background-color: var(--background-color);
+    background-color: var(--color-background);
     color: var(--primary-color);
 }
 
@@ -106,7 +106,7 @@
 }
 
 .menuItem:hover {
-    background-color: var(--background-color);
+    background-color: var(--color-background);
     color: var(--primary-color);
 }
 

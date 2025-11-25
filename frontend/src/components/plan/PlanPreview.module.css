@@ -60,7 +60,7 @@
 }
 
 .previewActionBtn:hover {
-    background-color: var(--background-color);
+    background-color: var(--color-background);
     color: var(--text-primary);
 }
 
@@ -79,7 +79,7 @@
 }
 
 .previewActionBtn.close:hover {
-    background-color: var(--background-color);
+    background-color: var(--color-background);
     color: var(--text-primary);
 }
 

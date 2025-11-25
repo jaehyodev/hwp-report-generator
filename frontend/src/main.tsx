@@ -26,10 +26,6 @@ import 'antd/dist/reset.css' // Ant Design 기본 스타일 초기화
  * npm run dev로 Vite를 실행하면
  * 자동으로 import.meta.env.MODE의 값은 'development'가 됩니다.
  */
-
-console.log('ENV', import.meta.env.VITE_API_BASE_URL)
-;(window as any).API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-
 async function enableMocking() {
     // MSW 비활성화 옵션 체크
     if (import.meta.env.VITE_ENABLE_MSW === 'false') {

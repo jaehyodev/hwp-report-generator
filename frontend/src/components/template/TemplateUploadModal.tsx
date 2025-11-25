@@ -170,11 +170,15 @@ const TemplateUploadModal = ({open, onClose, uploading, onUpload}: TemplateUploa
                         <p className={styles.noticeTitle}>템플릿 작성 가이드</p>
                         <ul className={styles.noticeList}>
                             <li>
-                                템플릿에는 다음 플레이스홀더를 사용할 수 있습니다:
+                                템플릿에는 다음 플레이스홀더를 사용할 수 있습니다.
                                 <br />
-                                <code>{'{{TITLE}}'}</code>, <code>{'{{DATE}}'}</code>, <code>{'{{SUMMARY}}'}</code>, <code>{'{{BACKGROUND}}'}</code>,{' '}
-                                <code>{'{{MAIN_CONTENT}}'}</code>, <code>{'{{CONCLUSION}}'}</code>
+                                <br />
+                                <code>{'{TITLE}'}</code>, <code>{'{DATE}'}</code>, <code>{'{SUMMARY}'}</code>, <code>{'{BACKGROUND}'}</code>,{' '}
+                                <code>{'{MAIN_CONTENT}'}</code>, <code>{'{CONCLUSION}'}</code>,
+                                <code>{'{TITLE_BACKGROUND}'}</code>, <code>{'{TITLE_CONCLUSION}'}</code>,
+                                <code>{'{TITLE_MAIN_CONTENT}'}</code>, <code>{'{TITLE_SUMARY}'}</code>
                             </li>
+                            <br />
                             <li>템플릿의 플레이스홀더는 실제 내용으로 대체됩니다.</li>
                             <li>플레이스홀더는 중복될 수 없습니다.</li>
                             <li>HWPX 파일은 한글 2014 이상에서 지원됩니다.</li>

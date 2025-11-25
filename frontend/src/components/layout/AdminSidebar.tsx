@@ -6,7 +6,6 @@ import {
     DashboardOutlined,
     LeftOutlined,
     RightOutlined,
-    MessageOutlined,
     FileAddOutlined
 } from '@ant-design/icons'
 import styles from './AdminSidebar.module.css'
