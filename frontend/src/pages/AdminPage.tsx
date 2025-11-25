@@ -4,6 +4,7 @@ import {ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, KeyOutlined} f
 import type {ColumnsType} from 'antd/es/table'
 import MainLayout from '../components/layout/MainLayout'
 import AdminSidebar from '../components/layout/AdminSidebar'
+import { useAllTokenUsage } from '@/hooks/useAllTokenUsage'
 import PromptManagement from '../components/admin/PromptManagement'
 import AdminTemplateManagement from '../components/admin/AdminTemplateManagement'
 import {useUsers} from '../hooks/useUsers'
@@ -19,6 +20,7 @@ const AdminPage = () => {
     const [resetMessage, setResetMessage] = useState('')
     const [activeMenu, setActiveMenu] = useState('users')
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+    const { usageList, isLoading: isUsageLoading, error: usageError, refetch: refetchUsage } = useAllTokenUsage()
 
     const handleToggleActive = async (userId: number, currentValue: boolean) => {
         try {
@@ -154,8 +156,30 @@ const AdminPage = () => {
                     )}
 
                     {activeMenu === 'dashboard' && (
-                        <Card title="대시보드">
-                            <p>대시보드 기능은 준비 중입니다.</p>
+                        <Card
+                            title="대시보드"
+                            extra={
+                            <Button icon={<ReloadOutlined />} onClick={refetchUsage} loading={isUsageLoading}>
+                                새로고침
+                            </Button>
+                            }
+                        >
+                            <h2>전체 토큰 사용량</h2>
+                            {isUsageLoading && <p>전체 토큰 사용량 조회 중...</p>}
+                            {usageError && <p style={{ color: 'red' }}>{usageError}</p>}
+                            {!isUsageLoading && !usageError && (
+                            <Table
+                                dataSource={usageList}
+                                rowKey="single" // 개수는 1개입니다.
+                                pagination={false}
+                                columns={[
+                                { title: '입력 토큰', dataIndex: 'total_input_tokens', key: 'total_input_tokens' },
+                                { title: '출력 토큰', dataIndex: 'total_output_tokens', key: 'total_output_tokens' },
+                                { title: '총 토큰', dataIndex: 'total_tokens', key: 'total_tokens' },
+                                { title: '보고서 수', dataIndex: 'report_count', key: 'report_count' }
+                                ]}
+                            />
+                            )}
                         </Card>
                     )}
 

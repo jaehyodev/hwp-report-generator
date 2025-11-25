@@ -72,6 +72,8 @@ export const API_ENDPOINTS = {
     APPROVE_USER: (userId: number) => `/api/admin/users/${userId}/approve`, // 사용자 승인
     REJECT_USER: (userId: number) => `/api/admin/users/${userId}/reject`, // 사용자 거부
     RESET_PASSWORD: (userId: number) => `/api/admin/users/${userId}/reset-password`, // 비밀번호 초기화
+    GET_ALL_TOKEN_USAGE: '/api/admin/token-usage', // 모든 사용자의 토큰 사용량 조회
+    GET_USER_TOKEN_USAGE: (userId: number) => `/api/admin/token-usage/${userId}`, // 사용자 토큰 사용량 조회
 
     // 메시지 API
     LIST_MESSAGES: (topicId: number) => `/api/topics/${topicId}/messages`, // 토픽의 메시지 목록
