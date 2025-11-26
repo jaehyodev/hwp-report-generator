@@ -142,8 +142,9 @@ const MainPage = () => {
                 messageStore.clearMessages(currentTopicId)
             }
 
-            // 3. 주제 초기화
+            // 3. 주제 및 템플릿 초기화
             topicStore.setSelectedTopicId(null)
+            topicStore.setSelectedTemplateId(null)
 
             // 4. PlanPreview 닫기
             setPlanPreviewOpen(false)
@@ -162,7 +163,7 @@ const MainPage = () => {
                 loadMessages(selectedTopicId)
             }
         }
-    }, [selectedTopicId])
+    }, [loadMessages, selectedTopicId])
 
     // 아티팩트(보고서) 관련 핸들러
     const {
