@@ -1,7 +1,7 @@
 import {useState, useRef, useEffect} from 'react'
 import {message as antdMessage} from 'antd'
 import {MenuOutlined} from '@ant-design/icons'
-import {OutlineMessage} from '../components/OutlineMessage'
+import {OutlineMessage} from '../components/chat/OutlineMessage'
 import ChatMessage from '../components/chat/ChatMessage'
 import ChatInput, {type ChatInputHandle} from '../components/chat/ChatInput'
 import ReportPreview from '../components/report/ReportPreview'
@@ -30,7 +30,8 @@ const MainPage = () => {
         setSelectedTemplateId,
         sidebarTopics,
         handleTopicPlanWithMessages,
-        generateReportFromPlan
+        generateReportFromPlan,
+        plan
     } = useTopicStore()
 
     // 템플릿 선택 화면 표시 여부
@@ -193,6 +194,10 @@ const MainPage = () => {
         if (selectedTopicId === null || selectedTopicId === 0) {
             // 보고서 생성 이전인 계획 모드인 경우
             const templateId = selectedTemplateId || 1
+
+            // 새 plan 요청 시 버튼 표시 상태 리셋
+            setShowOutlineButtons(true)
+
             // handleTopicPlanWithMessages 내부에서 isTopicPlan=true 설정됨
             await handleTopicPlanWithMessages(templateId, message, addMessages)
         } else {
@@ -342,7 +347,7 @@ const MainPage = () => {
                                                             message={message}
                                                             onGenerateReport={handleGenerateFromOutline}
                                                             onContinue={handleContinueOutline}
-                                                            showButtons={showOutlineButtons}
+                                                            showButtons={showOutlineButtons && plan !== null}
                                                         />
                                                     ) : (
                                                         <ChatMessage

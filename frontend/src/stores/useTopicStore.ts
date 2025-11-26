@@ -297,8 +297,9 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                     planLoading: false,
                     planError: null
                 })
-            } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : '계획 생성에 실패했습니다.'
+            } catch (error: any) {
+                // 서버 에러 메시지 우선, 없으면 기본 메시지
+                const errorMessage = error.response?.data?.error?.message || '계획 생성에 실패했습니다.'
                 console.error('Failed to generate plan:', error)
                 set({
                     plan: null,

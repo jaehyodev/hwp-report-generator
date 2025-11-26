@@ -1,6 +1,6 @@
-import type {MessageUI} from '../models/ui/MessageUI'
-import {AssistantOutlineCard} from './chat/AssistantOutlineCard'
-import {OutlineActionButtons} from './chat/OutlineActionButtons'
+import type {MessageUI} from '../../models/ui/MessageUI'
+import {AssistantOutlineCard} from './AssistantOutlineCard'
+import {OutlineActionButtons} from './OutlineActionButtons'
 
 interface OutlineMessageProps {
     message: MessageUI // outline 모드의 MessageUI

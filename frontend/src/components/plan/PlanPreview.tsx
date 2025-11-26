@@ -1,5 +1,5 @@
 import React, {useState} from 'react'
-import {CloseOutlined, CheckOutlined} from '@ant-design/icons'
+import {CloseOutlined} from '@ant-design/icons'
 import styles from './PlanPreview.module.css'
 
 interface PlanPreviewProps {
