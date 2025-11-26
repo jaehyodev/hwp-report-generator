@@ -443,7 +443,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
          */
         generateReportFromPlan: async () => {
             const state = get()
-            const { plan } = state
+            const { plan, selectedTemplateId } = state
 
             if (!plan) {
                 antdMessage.error('계획 정보가 없습니다.')
@@ -451,6 +451,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             }
 
             const realTopicId = plan.topic_id
+            const templateId = selectedTemplateId || 1 // 선택된 템플릿 ID 사용, fallback: 1
             const messageStore = useMessageStore.getState()
 
             try {
@@ -468,7 +469,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                 const response = await topicApi.generateTopicBackground(realTopicId, {
                     topic: plan.plan.split('\n')[0].replace('# ', '').replace(' 작성 계획', ''), // 첫 줄에서 주제 추출
                     plan: plan.plan,
-                    template_id: 1 // TODO: template_id 저장 필요
+                    template_id: templateId
                 })
 
                 antdMessage.destroy(`generate-${realTopicId}`)
