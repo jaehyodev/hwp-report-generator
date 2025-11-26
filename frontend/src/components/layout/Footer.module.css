@@ -4,7 +4,7 @@
     right: 0;
     height: var(--footer-height);
     text-align: center;
-    background-color: var(--white);
+    background-color: var(--color-background);
     display: flex;
     align-items: center;
     justify-content: center;

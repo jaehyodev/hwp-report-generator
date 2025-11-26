@@ -124,7 +124,7 @@ const AdminPage = () => {
     ]
 
     return (
-        <MainLayout showHeader={true}>
+        <MainLayout showHeader={true} sidebarCollapsed={isSidebarCollapsed}>
             <div className={styles.adminPageContainer}>
                 <AdminSidebar
                     activeMenu={activeMenu}
@@ -132,7 +132,7 @@ const AdminPage = () => {
                     isCollapsed={isSidebarCollapsed}
                     onCollapseChange={setIsSidebarCollapsed}
                 />
-                <div className={`${styles.adminContent} ${isSidebarCollapsed ? styles.sidebarCollapsed : undefined}`}>
+                <div className={`${styles.adminContent} ${isSidebarCollapsed ? styles.sidebarCollapsed : styles.sidebarExpanded}`}>
                     {activeMenu === 'users' && (
                         <Card
                             title="사용자 관리"

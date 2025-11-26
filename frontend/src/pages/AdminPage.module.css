@@ -9,7 +9,6 @@
 
 .adminContent {
     flex: 1;
-    margin-left: var(--sidebar-width);
     padding: var(--spacing-lg);
     transition: margin-left var(--transition-base) ease;
     min-height: calc(100vh - var(--header-height) - var(--footer-height));
@@ -20,10 +19,14 @@
 .adminContent.sidebarCollapsed {
     margin-left: var(--sidebar-collapsed-width);
 }
+.adminContent.sidebarExpanded {
+    margin-left: var(--sidebar-width);
+}
 
 /* Mobile (≤768px) */
 @media (max-width: 768px) {
-    .adminContent {
-        padding: var(--spacing-md);
+    .adminContent.sidebarCollapsed,
+    .adminContent.sidebarExpanded {
+        margin-left: 0;
     }
 }

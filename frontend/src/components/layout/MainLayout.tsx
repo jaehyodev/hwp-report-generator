@@ -12,7 +12,7 @@ interface MainLayoutProps {
     showHeader?: boolean
 }
 
-const MainLayout: React.FC<MainLayoutProps> = ({children, sidebarCollapsed = null, showHeader = false}) => {
+const MainLayout = ({children, sidebarCollapsed = null, showHeader = false}: MainLayoutProps) => {
     return (
         <Layout className={styles.main}>
             {showHeader && <Header />}

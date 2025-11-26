@@ -91,7 +91,7 @@ const AdminDashboard = () => {
     const dashboardError = totalUsageError || userUsageError
 
     return (
-        <div className={styles.dashboardContainer}>
+        <div>
             <Card
                 title="관리자 대시보드"
                 extra={

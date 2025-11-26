@@ -24,9 +24,7 @@ interface MenuItem {
     description?: string
 }
 
-const AdminSidebar = ({activeMenu = 'users', onMenuChange, onCollapseChange}: AdminSidebarProps) => {
-    const [isCollapsed, setIsCollapsed] = useState(false)
-
+const AdminSidebar = ({activeMenu = 'users', onMenuChange, isCollapsed, onCollapseChange}: AdminSidebarProps) => {
     const menuItems: MenuItem[] = [
         {
             key: 'dashboard',
@@ -67,7 +65,6 @@ const AdminSidebar = ({activeMenu = 'users', onMenuChange, onCollapseChange}: Ad
     }
 
     const handleToggle = () => {
-        setIsCollapsed(!isCollapsed)
         onCollapseChange(!isCollapsed)
     }
 

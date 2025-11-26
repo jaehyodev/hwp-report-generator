@@ -87,7 +87,7 @@
 }
 
 .table td {
-    padding: 1rem;
+    padding: 0.75rem;
     color: #4b5563;
 }
 
@@ -99,10 +99,11 @@
 
 .topicColumn {
     min-width: 18.75rem;
+    max-width: 30rem;
 }
 
 .dateColumn {
-    width: 11.25rem;
+    width: 13rem;
 }
 
 .actionColumn {
@@ -303,6 +304,7 @@
 
     .topicColumn {
         min-width: 12.5rem;
+        max-width: 30rem;
     }
 
     .dateColumn {

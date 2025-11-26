@@ -5,6 +5,8 @@ import type {AdminTemplateItem} from '../../types/template'
 import TemplateDetailModal from '../template/TemplateDetailModal'
 import {formatDate, formatFileSize} from '../../utils/formatters'
 import {useTemplateManagement} from '../../hooks/useTemplateManagement'
+import styles from './AdminTemplateManagement.module.css'
+
 
 /**
  * AdminTemplateManagement.tsx
@@ -86,12 +88,14 @@ const AdminTemplateManagement = () => {
         <>
             <Card
                 title="템플릿 관리"
-                bordered={false}
                 extra={
                     <Button icon={<ReloadOutlined />} onClick={() => loadTemplates()} loading={loading}>
                         새로고침
                     </Button>
-                }>
+                }
+                className={styles.dashboardCard}
+                >
+                
                 <Table
                     columns={columns}
                     dataSource={templates}
