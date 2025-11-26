@@ -37,7 +37,13 @@ const MainPage = () => {
     const showTemplateSelection = selectedTopicId === null && selectedTemplateId === null
 
     // 메시지 관리
-    const {addMessages, setMessages, isLoadingMessages, isGeneratingMessage, isDeletingMessage, loadMessages, refreshMessages} = useMessageStore()
+    const {addMessages, setMessages, isDeletingMessage, loadMessages, refreshMessages} = useMessageStore()
+
+    // 현재 토픽에서 AI 응답 생성 중인지 확인 (토픽별로 GeneratingIndicator 표시 제어)
+    const isGeneratingMessage = useTopicStore((state) => state.isTopicGenerating(selectedTopicId))
+
+    // 현재 토픽의 메시지가 로딩 중인지 확인 (토픽별로 ChatLoading 표시 제어)
+    const isLoadingMessages = useMessageStore((state) => state.isTopicMessagesLoading(selectedTopicId))
 
     // 메시지 구독 및 UI 변환 (커스텀 훅)
     const messages = useMessages(selectedTopicId)

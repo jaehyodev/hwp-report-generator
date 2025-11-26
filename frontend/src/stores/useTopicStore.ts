@@ -40,6 +40,9 @@ interface TopicStore {
     planLoading: boolean
     planError: string | null
 
+    // State - AI 응답 생성 중인 토픽 ID 목록
+    messageGeneratingTopicIds: Set<number>
+
     // Actions - Sidebar용
     loadSidebarTopics: () => Promise<void>
 
@@ -70,6 +73,11 @@ interface TopicStore {
 
     // Actions - 보고서 생성
     generateReportFromPlan: () => Promise<void>
+
+    // Actions - 생성 상태 관리
+    addGeneratingTopicId: (topicId: number) => void
+    removeGeneratingTopicId: (topicId: number) => void
+    isTopicGenerating: (topicId: number | null) => boolean
 }
 
 export const useTopicStore = create<TopicStore>((set, get) => {
@@ -96,6 +104,9 @@ export const useTopicStore = create<TopicStore>((set, get) => {
         plan: null,
         planLoading: false,
         planError: null,
+
+        // 초기 상태 - AI 응답 생성 중인 토픽 ID 목록
+        messageGeneratingTopicIds: new Set(),
 
         // Sidebar용 토픽 로드 (항상 첫 페이지만)
         loadSidebarTopics: async () => {
@@ -134,14 +145,22 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             }
         },
 
-        // 토픽 생성 후 양쪽 리스트에 추가
+        // 토픽 생성 후 양쪽 리스트에 추가 (중복 체크 포함)
         addTopic: (topic) => {
             set((state) => {
-                // Sidebar: 최신 토픽을 앞에 추가하고, SIDEBAR_TOPICS_PER_PAGE 제한 적용
-                const newSidebarTopics = [topic, ...state.sidebarTopics].slice(0, UI_CONFIG.PAGINATION.SIDEBAR_TOPICS_PER_PAGE)
+                // 중복 체크: 이미 존재하는 토픽이면 추가하지 않음
+                const existsInSidebar = state.sidebarTopics.some((t) => t.id === topic.id)
+                const existsInPage = state.pageTopics.some((t) => t.id === topic.id)
 
-                // Page: 제한 없이 추가 (페이지네이션은 loadPageTopics에서 관리)
-                const newPageTopics = [topic, ...state.pageTopics]
+                // Sidebar: 중복이 아닐 경우에만 추가
+                const newSidebarTopics = existsInSidebar
+                    ? state.sidebarTopics
+                    : [topic, ...state.sidebarTopics].slice(0, UI_CONFIG.PAGINATION.SIDEBAR_TOPICS_PER_PAGE)
+
+                // Page: 중복이 아닐 경우에만 추가
+                const newPageTopics = existsInPage
+                    ? state.pageTopics
+                    : [topic, ...state.pageTopics]
 
                 return {
                     sidebarTopics: newSidebarTopics,
@@ -298,7 +317,6 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             }
 
             const tempTopicId = 0 // 임시 topicId 고정
-            const messageStore = useMessageStore.getState()
 
             // 1. 사용자 메시지를 UI에 표시
             const userMsgModel: MessageModel = {
@@ -318,7 +336,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             set({selectedTopicId: tempTopicId})
 
             // AI 응답 대기 상태 설정 (GeneratingIndicator 표시)
-            messageStore.setIsGeneratingMessage(true)
+            get().addGeneratingTopicId(tempTopicId)
 
             try {
                 // 3. 계획 생성 API 호출
@@ -349,7 +367,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                 }
 
                 // PLAN 생성 완료 - GeneratingIndicator 숨기기
-                messageStore.setIsGeneratingMessage(false)
+                get().removeGeneratingTopicId(tempTopicId)
             } catch (error: any) {
                 console.error('개요 요청 실패:', error)
                 const currentError = get().planError
@@ -368,7 +386,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                 addMessages(tempTopicId, [errorMsgModel])
 
                 // PLAN 생성 실패 - GeneratingIndicator 숨기기
-                messageStore.setIsGeneratingMessage(false)
+                get().removeGeneratingTopicId(tempTopicId)
             }
         },
 
@@ -395,6 +413,30 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             })
         },
 
+        // 생성 중인 토픽 ID 추가
+        addGeneratingTopicId: (topicId: number) => {
+            set((state) => {
+                const newSet = new Set(state.messageGeneratingTopicIds)
+                newSet.add(topicId)
+                return {messageGeneratingTopicIds: newSet}
+            })
+        },
+
+        // 생성 중인 토픽 ID 제거
+        removeGeneratingTopicId: (topicId: number) => {
+            set((state) => {
+                const newSet = new Set(state.messageGeneratingTopicIds)
+                newSet.delete(topicId)
+                return {messageGeneratingTopicIds: newSet}
+            })
+        },
+
+        // 특정 토픽이 생성 중인지 확인
+        isTopicGenerating: (topicId: number | null) => {
+            if (topicId === null) return false
+            return get().messageGeneratingTopicIds.has(topicId)
+        },
+
         /**
          * 계획 기반 보고서 생성
          * "예" 클릭 시 호출 - 백그라운드에서 실제 보고서 생성
@@ -413,11 +455,12 @@ export const useTopicStore = create<TopicStore>((set, get) => {
 
             try {
                 // AI 응답 대기 상태 설정 (GeneratingIndicator 표시)
-                messageStore.setIsGeneratingMessage(true)
+                // 보고서 생성 버튼 클릭 시점에는 selectedTopicId=0 (계획 모드)
+                get().addGeneratingTopicId(0)
 
                 antdMessage.loading({
                     content: '보고서 생성 요청 중...',
-                    key: 'generate',
+                    key: `generate-${realTopicId}`,
                     duration: 0
                 })
 
@@ -428,13 +471,13 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                     template_id: 1 // TODO: template_id 저장 필요
                 })
 
-                antdMessage.destroy('generate')
+                antdMessage.destroy(`generate-${realTopicId}`)
 
                 // 202 Accepted - 백그라운드에서 생성 중
                 if (response.status === 'generating') {
                     antdMessage.loading({
                         content: '보고서 생성 중...',
-                        key: 'generating',
+                        key: `generating-${realTopicId}`,
                         duration: 0
                     })
 
@@ -556,7 +599,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 isCompleted = true
                                 unsubscribe()
 
-                                antdMessage.destroy('generating')
+                                antdMessage.destroy(`generating-${realTopicId}`)
                                 antdMessage.success('보고서가 생성되었습니다.')
 
                                 // 메시지 처리
@@ -588,14 +631,14 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 }
 
                                 set({ selectedTopicId: realTopicId })
-                                messageStore.setIsGeneratingMessage(false)
+                                get().removeGeneratingTopicId(0)
                             } else if (status.status === 'failed') {
                                 isCompleted = true
                                 unsubscribe()
 
-                                antdMessage.destroy('generating')
+                                antdMessage.destroy(`generating-${realTopicId}`)
                                 antdMessage.error('보고서 생성에 실패했습니다.')
-                                messageStore.setIsGeneratingMessage(false)
+                                get().removeGeneratingTopicId(0)
                                 messageStore.setGeneratingReportStatus(undefined)
                             }
                         }, (error) => {
@@ -604,18 +647,18 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                             unsubscribe()
 
                             console.error('SSE error:', error)
-                            antdMessage.destroy('generating')
+                            antdMessage.destroy(`generating-${realTopicId}`)
                             antdMessage.error('보고서 상태 확인 중 오류가 발생했습니다.')
-                            messageStore.setIsGeneratingMessage(false)
+                            get().removeGeneratingTopicId(0)
                             messageStore.setGeneratingReportStatus(undefined)
                         }
                     )
                 }
             } catch (error: any) {
                 console.error('보고서 생성 실패:', error)
-                antdMessage.destroy('generate')
+                antdMessage.destroy(`generate-${realTopicId}`)
                 antdMessage.error('보고서 생성에 실패했습니다.')
-                messageStore.setIsGeneratingMessage(false)
+                get().removeGeneratingTopicId(0)
             }
         }
     }

@@ -40,7 +40,8 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, setMessages
         }
 
         const messageStore = useMessageStore.getState()
-        messageStore.setIsGeneratingMessage(true)
+        const topicStore = useTopicStore.getState()
+        topicStore.addGeneratingTopicId(selectedTopicId)
 
         try {
             // 보고서 생성 이후 메시지 체이닝 (ask API)
@@ -91,7 +92,7 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, setMessages
             console.error('Error sending message:', error)
             antdMessage.error('메시지 전송에 실패했습니다.')
         } finally {
-            useMessageStore.getState().setIsGeneratingMessage(false)
+            useTopicStore.getState().removeGeneratingTopicId(selectedTopicId)
         }
     }
 

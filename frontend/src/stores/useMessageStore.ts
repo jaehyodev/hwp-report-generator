@@ -21,9 +21,8 @@ interface MessageStore {
     messagesByTopic: Map<number, MessageModel[]>
 
     // UI 상태
-    isGeneratingMessage: boolean
     isDeletingMessage: boolean
-    isLoadingMessages: boolean
+    messageLoadingTopicIds: Set<number> // 메시지 로딩 중인 토픽 ID 목록
 
     generatingReportStatus?: {
         topicId: number
@@ -42,9 +41,10 @@ interface MessageStore {
     setGeneratingReportStatus: (status?: MessageStore['generatingReportStatus']) => void
 
     // UI 상태 Actions
-    setIsGeneratingMessage: (generating: boolean) => void
     setIsDeletingMessage: (deleting: boolean) => void
-    setIsLoadingMessages: (loading: boolean) => void
+    addMessageLoadingTopicId: (topicId: number) => void
+    removeMessageLoadingTopicId: (topicId: number) => void
+    isTopicMessagesLoading: (topicId: number | null) => boolean
 
     // API Actions
     loadMessages: (topicId: number) => Promise<void>
@@ -58,9 +58,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
     return {
         // 초기 상태
         messagesByTopic: new Map(),
-        isGeneratingMessage: false,
         isDeletingMessage: false,
-        isLoadingMessages: false,
+        messageLoadingTopicIds: new Set(),
 
         // 메시지 데이터 Actions
         setMessages: (topicId, messages) =>
@@ -96,9 +95,31 @@ export const useMessageStore = create<MessageStore>((set, get) => {
         },
 
         // UI 상태 Actions
-        setIsGeneratingMessage: (generating) => set({isGeneratingMessage: generating}),
         setIsDeletingMessage: (deleting) => set({isDeletingMessage: deleting}),
-        setIsLoadingMessages: (loading) => set({isLoadingMessages: loading}),
+
+        // 메시지 로딩 중인 토픽 ID 추가
+        addMessageLoadingTopicId: (topicId: number) => {
+            set((state) => {
+                const newSet = new Set(state.messageLoadingTopicIds)
+                newSet.add(topicId)
+                return {messageLoadingTopicIds: newSet}
+            })
+        },
+
+        // 메시지 로딩 중인 토픽 ID 제거
+        removeMessageLoadingTopicId: (topicId: number) => {
+            set((state) => {
+                const newSet = new Set(state.messageLoadingTopicIds)
+                newSet.delete(topicId)
+                return {messageLoadingTopicIds: newSet}
+            })
+        },
+
+        // 특정 토픽의 메시지가 로딩 중인지 확인
+        isTopicMessagesLoading: (topicId: number | null) => {
+            if (topicId === null) return false
+            return get().messageLoadingTopicIds.has(topicId)
+        },
 
         // API Actions
         /**
@@ -107,12 +128,12 @@ export const useMessageStore = create<MessageStore>((set, get) => {
          * - 임시 topicId(-1)의 메시지와 병합하지 않음 (MSW가 처리)
          */
         fetchMessages: async (topicId: number) => {
-            set({isLoadingMessages: true})
+            get().addMessageLoadingTopicId(topicId)
             try {
                 // ✅ 임시 topicId(음수)인 경우 백엔드 호출하지 않음
                 if (topicId < 0) {
                     // 이미 addOutlineMessage로 저장된 메시지 사용
-                    set({isLoadingMessages: false})
+                    get().removeMessageLoadingTopicId(topicId)
                     return
                 }
 
@@ -142,7 +163,7 @@ export const useMessageStore = create<MessageStore>((set, get) => {
                 console.error('Failed to load messages:', error)
                 antdMessage.error('메시지를 불러오는데 실패했습니다.')
             } finally {
-                set({isLoadingMessages: false})
+                get().removeMessageLoadingTopicId(topicId)
             }
         },
 
@@ -151,11 +172,11 @@ export const useMessageStore = create<MessageStore>((set, get) => {
          * 사이드바 클릭, 토픽 리스트에서 선택 시 사용
          */
         loadMessages: async (topicId: number) => {
-            set({isLoadingMessages: true})
+            get().addMessageLoadingTopicId(topicId)
             try {
                 // 임시 topicId(음수)인 경우 백엔드 호출하지 않음
                 if (topicId < 0) {
-                    set({isLoadingMessages: false})
+                    get().removeMessageLoadingTopicId(topicId)
                     return
                 }
 
@@ -182,7 +203,7 @@ export const useMessageStore = create<MessageStore>((set, get) => {
                 console.error('Failed to load messages:', error)
                 antdMessage.error('메시지를 불러오는데 실패했습니다.')
             } finally {
-                set({isLoadingMessages: false})
+                get().removeMessageLoadingTopicId(topicId)
             }
         },
 
