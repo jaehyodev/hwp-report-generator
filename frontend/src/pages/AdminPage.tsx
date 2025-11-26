@@ -1,5 +1,5 @@
 import {useState} from 'react'
-import {Card, Table, Switch, Button, Space, Statistic, message, Tag, Modal} from 'antd'
+import {Card, Table, Switch, Button, Space, message, Tag, Modal} from 'antd'
 import {ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, KeyOutlined} from '@ant-design/icons'
 import type {ColumnsType} from 'antd/es/table'
 import MainLayout from '../components/layout/MainLayout'

@@ -27,7 +27,7 @@ interface MessageStore {
 
     generatingReportStatus?: {
         topicId: number
-        status: 'pending' | 'generating' | 'completed' | 'failed'
+        status: string
         progressPercent: number
         artifactId?: number
         errorMessage?: string
@@ -54,11 +54,6 @@ interface MessageStore {
 }
 
 export const useMessageStore = create<MessageStore>((set, get) => {
-    // 개발 환경에서 MSW가 접근할 수 있도록 window 객체에 노출
-    if (typeof window !== 'undefined') {
-        // @ts-ignore
-        window.__messageStore = {getState: get}
-    }
 
     return {
         // 초기 상태

@@ -273,6 +273,9 @@ const MainPage = () => {
             // 만약 완전히 지우고 싶다면: messageStore.clearMessages(prevTopicId)
         }
 
+        // 보고서 미리보기 닫기
+        setSelectedReport(null)
+
         // 템플릿 선택 화면으로 돌아가기
         setSelectedTopicId(null)
         setSelectedTemplateId(null)

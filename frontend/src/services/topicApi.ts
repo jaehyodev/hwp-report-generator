@@ -271,19 +271,21 @@ export const topicApi = {
     ) => {
         // 토큰 추출
         const token = storage.getToken()
-        let controller = new AbortController()
+        const controller = new AbortController()
 
-        // EventSource 생성 
+        // EventSource 생성
         fetchEventSource(`http://localhost:8000/api/topics/${topicId}/status/stream`, {
             method: 'GET',
             headers: {
                 Authorization: `Bearer ${token}`,
             },
+            signal: controller.signal, // AbortController signal 추가
+            openWhenHidden: true, // 탭이 숨겨져도 연결 유지 (재연결 방지)
             onmessage: (event) => {
                 try {
                     const data = JSON.parse(event.data)
                     console.log('topicApi >> sse >> ', data)
-                    // event 타입에 따라 처리 
+                    // event 타입에 따라 처리
                     if (data.event === 'status_update' || data.event === 'completion') {
                         onMessage({
                             topic_id: topicId,
@@ -300,9 +302,11 @@ export const topicApi = {
             onerror: (error) => {
                 console.error('SSE connection error:', error)
                 if (onError) onError(error)
+                // 에러 시 재연결 하지 않도록 throw
+                throw error
             },
         })
-        
+
         // 반환: 구독 취소용
         return () => {
             controller.abort()

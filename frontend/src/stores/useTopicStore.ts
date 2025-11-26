@@ -73,11 +73,6 @@ interface TopicStore {
 }
 
 export const useTopicStore = create<TopicStore>((set, get) => {
-    // 개발 환경에서 콘솔로 접근할 수 있도록 window 객체에 노출
-    if (typeof window !== 'undefined') {
-        // @ts-ignore
-        window.__topicStore = {getState: get}
-    }
 
     return {
         // 초기 상태 - Sidebar용
@@ -538,9 +533,15 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                     // 첫 상태 확인 시작
                     // setTimeout(checkStatus, pollInterval)
 
-                    const unsubscribe = topicApi.getGenerationStatusStream( 
-                        realTopicId, 
-                        async (status) => { 
+                    // 중복 처리 방지 플래그
+                    let isCompleted = false
+
+                    const unsubscribe = topicApi.getGenerationStatusStream(
+                        realTopicId,
+                        async (status) => {
+                            // 이미 완료/실패 처리됐으면 무시
+                            if (isCompleted) return
+
                             // SSE 상태를 메시지 스토어에 반영
                             messageStore.setGeneratingReportStatus({
                                 topicId: realTopicId,
@@ -550,58 +551,64 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 errorMessage: status.error_message
                             });
 
-                            if (status.status === 'completed') { 
-                                antdMessage.destroy('generating') 
-                                antdMessage.success('보고서가 생성되었습니다.') 
-                                
-                                // 메시지 처리 
-                                const planMessages = messageStore.getMessages(0) 
-                                const messagesResponse = await messageApi.listMessages(realTopicId) 
-                                const messageModels = mapMessageResponsesToModels(messagesResponse.messages) 
-                                const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId) 
-                                const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts) 
-                                
-                                const updatedPlanMessages = planMessages.map((msg) => ({ 
-                                    ...msg, 
-                                    topicId: realTopicId 
-                                })) 
-                                const planMessageIds = new Set(updatedPlanMessages.filter((m) => m.id).map((m) => m.id)) 
-                                const newServerMessages = serverMessages.filter((m: MessageModel) => { 
-                                    if (!m.id) return true 
-                                    return !planMessageIds.has(m.id) 
-                                }) 
-                                const mergedMessages = [...updatedPlanMessages, ...newServerMessages] 
-                                messageStore.setMessages(realTopicId, mergedMessages) 
-                                messageStore.clearMessages(0) 
-                                
-                                try { 
-                                    const newTopic = await topicApi.getTopic(realTopicId) 
-                                    get().addTopic(newTopic) 
-                                } catch (error) { 
-                                    console.error('Failed to fetch new topic for sidebar:', error) 
+                            if (status.status === 'completed') {
+                                // 즉시 플래그 설정 + 연결 종료 (두 번째 이벤트 방지)
+                                isCompleted = true
+                                unsubscribe()
+
+                                antdMessage.destroy('generating')
+                                antdMessage.success('보고서가 생성되었습니다.')
+
+                                // 메시지 처리
+                                const planMessages = messageStore.getMessages(0)
+                                const messagesResponse = await messageApi.listMessages(realTopicId)
+                                const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
+                                const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
+                                const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
+
+                                const updatedPlanMessages = planMessages.map((msg) => ({
+                                    ...msg,
+                                    topicId: realTopicId
+                                }))
+                                const planMessageIds = new Set(updatedPlanMessages.filter((m) => m.id).map((m) => m.id))
+                                const newServerMessages = serverMessages.filter((m: MessageModel) => {
+                                    if (!m.id) return true
+                                    return !planMessageIds.has(m.id)
+                                })
+                                const mergedMessages = [...updatedPlanMessages, ...newServerMessages]
+                                messageStore.setMessages(realTopicId, mergedMessages)
+                                messageStore.clearMessages(0)
+
+                                try {
+                                    const newTopic = await topicApi.getTopic(realTopicId)
+                                    get().addTopic(newTopic)
+                                } catch (error) {
+                                    console.error('Failed to fetch new topic for sidebar:', error)
                                     get().loadSidebarTopics()
-                                } 
+                                }
 
                                 set({ selectedTopicId: realTopicId })
                                 messageStore.setIsGeneratingMessage(false)
-                                
-                                // SSE 구독 종료 
-                                unsubscribe()
                             } else if (status.status === 'failed') {
+                                isCompleted = true
+                                unsubscribe()
+
                                 antdMessage.destroy('generating')
                                 antdMessage.error('보고서 생성에 실패했습니다.')
                                 messageStore.setIsGeneratingMessage(false)
                                 messageStore.setGeneratingReportStatus(undefined)
-                                unsubscribe();
-                            } 
-                        }, (error) => { 
-                            console.error('SSE error:', error) 
-                            antdMessage.destroy('generating') 
-                            antdMessage.error('보고서 상태 확인 중 오류가 발생했습니다.') 
+                            }
+                        }, (error) => {
+                            if (isCompleted) return
+                            isCompleted = true
+                            unsubscribe()
+
+                            console.error('SSE error:', error)
+                            antdMessage.destroy('generating')
+                            antdMessage.error('보고서 상태 확인 중 오류가 발생했습니다.')
                             messageStore.setIsGeneratingMessage(false)
                             messageStore.setGeneratingReportStatus(undefined)
-                            unsubscribe();
-                        } 
+                        }
                     )
                 }
             } catch (error: any) {
