@@ -45,7 +45,7 @@
 
 ```mermaid
 flowchart TD
-    A[Client] -->|POST /api/topics/{id}/optimize-prompt<br/>Body: user_prompt| B{Topic 존재?}
+    A[Client] -->|POST /api/topics/[id]/optimize-prompt<br/>Body: user_prompt| B{Topic 존재?}
     B -- No --> C["404 NOT_FOUND<br/>(TOPIC.NOT_FOUND)"]
     B -- Yes --> D{권한 확인<br/>topic.user_id == current_user.id?}
     D -- No --> E["403 FORBIDDEN<br/>(TOPIC.UNAUTHORIZED)"]
@@ -67,7 +67,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Client] -->|POST /api/topics/{id}/generate<br/>또는 POST /api/topics/{id}/ask| B["generate_topic_report()"]
+    A[Client] -->|POST /api/topics/[id]/generate<br/>또는 POST /api/topics/[id]/ask| B["generate_topic_report()"]
     B --> C["고도화 결과 조회<br/>prompt_optimization_db.get_latest()"]
     C --> D{결과 존재?}
     D -- No --> E["기본 프롬프트 사용<br/>(현재 동작)"]
@@ -86,7 +86,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[Client] -->|GET /api/topics/{id}/optimization-result| B{Topic 존재?}
+    A[Client] -->|GET /api/topics/[id]/optimization-result| B{Topic 존재?}
     B -- No --> C["404 NOT_FOUND"]
     B -- Yes --> D{권한 확인?}
     D -- No --> E["403 FORBIDDEN"]
