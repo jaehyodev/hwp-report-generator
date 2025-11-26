@@ -76,9 +76,16 @@ async def login(credentials: UserLogin):
         표준 API 응답 (JWT 토큰 및 사용자 정보)
     """
     try:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # 디버깅: 입력된 이메일 로깅
+        logger.info(f"[LOGIN] 로그인 시도 - email: {credentials.email}")
+        
         # 사용자 인증
         user = authenticate_user(credentials.email, credentials.password)
         if not user:
+            logger.warning(f"[LOGIN] 인증 실패 - email: {credentials.email}")
             return error_response(
                 code=ErrorCode.AUTH_INVALID_CREDENTIALS,
                 http_status=401,
@@ -88,6 +95,7 @@ async def login(credentials: UserLogin):
 
         # 계정 활성화 확인
         if not user.is_active:
+            logger.warning(f"[LOGIN] 계정 비활성화 - email: {credentials.email}, is_active: {user.is_active}")
             return error_response(
                 code=ErrorCode.AUTH_ACCOUNT_INACTIVE,
                 http_status=403,
@@ -99,6 +107,8 @@ async def login(credentials: UserLogin):
         access_token = create_access_token(
             data={"user_id": user.id, "email": user.email}
         )
+        
+        logger.info(f"[LOGIN] 로그인 성공 - user_id: {user.id}, email: {user.email}")
 
         user_response = UserResponse(
             id=user.id,
@@ -117,6 +127,7 @@ async def login(credentials: UserLogin):
         })
 
     except Exception as e:
+        logger.error(f"[LOGIN] 예외 발생: {str(e)}", exc_info=True)
         return error_response(
             code=ErrorCode.SERVER_INTERNAL_ERROR,
             http_status=500,

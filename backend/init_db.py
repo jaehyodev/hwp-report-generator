@@ -33,7 +33,44 @@ def main():
     # 필요한 디렉토리 생성 (PATH_PROJECT_HOME 기반)
     os.makedirs(ProjectPath.DATABASE_DIR, exist_ok=True)
 
-    # 데이터베이스 초기화
+    # === 기존 테이블 삭제 (완전한 초기화) ===
+    from app.database.connection import get_db_connection
+    import time
+
+    # max_retries = 3
+    # for attempt in range(max_retries):
+    #     try:
+    #         conn = get_db_connection()
+    #         cursor = conn.cursor()
+    #         cursor.execute("PRAGMA foreign_keys = OFF")  # 외래키 제약 일시 비활성화
+
+    #         # 모든 테이블 삭제
+    #         cursor.execute("DROP TABLE IF EXISTS transformations")
+    #         cursor.execute("DROP TABLE IF EXISTS artifacts")
+    #         cursor.execute("DROP TABLE IF EXISTS messages")
+    #         cursor.execute("DROP TABLE IF EXISTS topics")
+    #         cursor.execute("DROP TABLE IF EXISTS ai_usage")
+    #         cursor.execute("DROP TABLE IF EXISTS token_usage")
+    #         cursor.execute("DROP TABLE IF EXISTS placeholders")
+    #         cursor.execute("DROP TABLE IF EXISTS templates")
+    #         cursor.execute("DROP TABLE IF EXISTS reports")
+    #         cursor.execute("DROP TABLE IF EXISTS users")
+
+    #         cursor.execute("PRAGMA foreign_keys = ON")  # 외래키 제약 재활성화
+    #         conn.commit()
+    #         conn.close()
+    #         print("[OK] 기존 테이블이 삭제되었습니다.")
+    #         break
+    #     except Exception as e:
+    #         if attempt < max_retries - 1:
+    #             print(f"[RETRY] 테이블 삭제 실패 (시도 {attempt + 1}/{max_retries}): {e}")
+    #             time.sleep(1)  # 1초 대기 후 재시도
+    #         else:
+    #             print(f"[WARNING] 기존 테이블 삭제 실패 (최종): {e}")
+    #             print("[INFO] 기존 테이블이 없거나 서버가 데이터베이스를 사용 중입니다.")
+    #             print("[INFO] 계속 진행합니다...")
+
+    # 데이터베이스 초기화 (새로운 테이블 생성)
     init_db()
     print("[OK] 데이터베이스 테이블이 생성되었습니다.")
 

@@ -1128,3 +1128,456 @@ AI 기반 금융 서비스가 확대되고 있습니다.
             "Saved message should not contain H2 section headers"
         assert "제공하신 내용을 확인했습니다" in last_message.content
 
+
+# ============================================================
+# Template ID Tracking Tests (v2.4+)
+# ============================================================
+
+@pytest.mark.unit
+@pytest.mark.allow_topic_without_template
+class TestTemplateIdTracking:
+    """Topic에 template_id 추적 기능 테스트 (v2.4+)"""
+
+    def test_tc1_create_topic_with_template_id(self, create_test_user):
+        """TC-1: TopicDB.create_topic() with template_id"""
+        topic_data = TopicCreate(
+            input_prompt="Test topic with template",
+            language="ko",
+            template_id=1
+        )
+        topic = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic_data)
+
+        assert topic.id is not None
+        assert topic.template_id == 1
+        assert topic.input_prompt == "Test topic with template"
+
+    def test_tc2_create_topic_without_template_id(self, create_test_user):
+        """TC-2: TopicDB.create_topic() without template_id (backward compatibility)"""
+        topic_data = TopicCreate(
+            input_prompt="Test topic without template",
+            language="ko"
+        )
+        topic = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic_data)
+
+        assert topic.id is not None
+        assert topic.template_id is None
+        assert topic.input_prompt == "Test topic without template"
+
+    def test_tc3_get_topic_returns_template_id(self, create_test_user):
+        """TC-3: TopicDB.get_topic_by_id() returns template_id"""
+        topic_data = TopicCreate(
+            input_prompt="Test topic",
+            language="ko",
+            template_id=2
+        )
+        created = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic_data)
+
+        retrieved = TopicDB.get_topic_by_id(created.id)
+
+        assert retrieved is not None
+        assert retrieved.template_id == 2
+        assert retrieved.id == created.id
+
+    def test_tc4_get_topic_with_null_template_id(self, create_test_user):
+        """TC-4: TopicDB.get_topic_by_id() with NULL template_id"""
+        topic_data = TopicCreate(
+            input_prompt="Test topic without template",
+            language="ko"
+        )
+        created = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic_data)
+
+        retrieved = TopicDB.get_topic_by_id(created.id)
+
+        assert retrieved is not None
+        assert retrieved.template_id is None
+
+    def test_tc5_get_topics_by_user_includes_template_id(self, create_test_user):
+        """TC-5: TopicDB.get_topics_by_user() includes template_id"""
+        topic1_data = TopicCreate(input_prompt="Topic 1", language="ko", template_id=1)
+        topic2_data = TopicCreate(input_prompt="Topic 2", language="ko", template_id=None)
+
+        topic1 = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic1_data)
+        topic2 = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic2_data)
+
+        topics, total = TopicDB.get_topics_by_user(user_id=create_test_user.id)
+
+        assert total >= 2
+        retrieved_topic1 = next((t for t in topics if t.id == topic1.id), None)
+        retrieved_topic2 = next((t for t in topics if t.id == topic2.id), None)
+
+        assert retrieved_topic1 is not None
+        assert retrieved_topic1.template_id == 1
+        assert retrieved_topic2 is not None
+        assert retrieved_topic2.template_id is None
+
+    def test_tc6_api_response_includes_template_id(self, client, auth_headers, create_test_user):
+        """TC-6: API Response (GET /api/topics/{id}) includes template_id"""
+        topic_data = TopicCreate(
+            input_prompt="API Test Topic",
+            language="ko",
+            template_id=3
+        )
+        topic = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic_data)
+
+        response = client.get(
+            f"/api/topics/{topic.id}",
+            headers=auth_headers
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["success"] is True
+        assert body["data"]["template_id"] == 3
+
+    def test_tc7_api_list_response_includes_template_id(self, client, auth_headers, create_test_user):
+        """TC-7: API List Response (GET /api/topics) includes template_id"""
+        topic_data = TopicCreate(
+            input_prompt="List API Test",
+            language="ko",
+            template_id=4
+        )
+        topic = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic_data)
+
+        response = client.get("/api/topics", headers=auth_headers)
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["success"] is True
+
+        found_topic = next((t for t in body["data"]["topics"] if t["id"] == topic.id), None)
+        assert found_topic is not None
+        assert found_topic["template_id"] == 4
+
+    def test_tc8_invalid_template_id(self, create_test_user):
+        """TC-8: Invalid template_id edge case"""
+        topic_data = TopicCreate(
+            input_prompt="Test with invalid template",
+            language="ko",
+            template_id=99999
+        )
+        topic = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic_data)
+
+        retrieved = TopicDB.get_topic_by_id(topic.id)
+        assert retrieved.template_id == 99999
+
+    def test_tc9_backward_compatibility(self, create_test_user):
+        """TC-9: Backward compatibility - existing data without template_id"""
+        topic_data = TopicCreate(
+            input_prompt="Legacy topic",
+            language="ko"
+        )
+        topic = TopicDB.create_topic(user_id=create_test_user.id, topic_data=topic_data)
+
+        retrieved = TopicDB.get_topic_by_id(topic.id)
+        assert retrieved is not None
+        assert retrieved.template_id is None
+        assert retrieved.input_prompt == "Legacy topic"
+
+
+@pytest.mark.api
+class TestBackgroundGenerationNonBlocking:
+    """백그라운드 보고서 생성 Event Loop Non-Blocking 테스트"""
+
+    def setup_method(self):
+        """각 테스트 전에 생성 상태 초기화"""
+        from app.utils.generation_status import clear_all_statuses
+        clear_all_statuses()
+
+    def test_tc_001_event_loop_non_blocking(self, client, auth_headers, create_test_user):
+        """TC-001: Event Loop Non-Blocking - Status 응답이 100ms 이내"""
+        # 사전: 토픽 생성
+        topic = TopicDB.create_topic(
+            user_id=create_test_user.id,
+            topic_data=TopicCreate(
+                input_prompt="Test blocking",
+                language="ko"
+            )
+        )
+
+        # Mock: Claude API 응답 (충분한 콘텐츠)
+        mock_markdown = """# 보고서 요약
+요약 섹션의 상세한 내용입니다. 최소 50자 이상의 콘텐츠를 포함하고 있습니다. 충분한 길이를 확보했습니다.
+
+## 배경
+배경 섹션의 상세한 내용입니다. 충분한 정보를 포함하고 있으며, 비즈니스 맥락을 설명합니다.
+
+## 주요 내용
+주요 내용 섹션입니다. 상세한 분석과 핵심 포인트를 제시합니다. 이 섹션은 매우 중요합니다.
+
+## 결론
+결론 섹션의 상세한 내용입니다. 최종 권고사항과 실행 계획을 포함합니다."""
+
+        with patch('app.utils.claude_client.ClaudeClient.generate_report') as mock_claude:
+            mock_claude.return_value = mock_markdown
+
+            # 생성 시작
+            generate_resp = client.post(
+                f"/api/topics/{topic.id}/generate",
+                headers=auth_headers,
+                json={
+                    "topic": "Test topic",
+                    "plan": "Test plan"
+                }
+            )
+            assert generate_resp.status_code == 202
+
+            # 즉시 status 확인 (응답 시간 측정)
+            import time
+            start = time.time()
+            status_resp = client.get(
+                f"/api/topics/{topic.id}/status",
+                headers=auth_headers
+            )
+            elapsed = time.time() - start
+
+            # 검증: 응답 < 100ms, 상태 = generating
+            assert status_resp.status_code == 200
+            assert elapsed < 0.1, f"Status response took {elapsed:.3f}s, expected < 0.1s"
+            data = status_resp.json()["data"]
+            assert data["status"] == "generating"
+
+    @pytest.mark.allow_topic_without_template
+    def test_generate_without_template_returns_404(self, client, auth_headers, create_test_user):
+        """template_id가 없는 토픽은 /generate 호출 시 실패한다."""
+        topic = TopicDB.create_topic(
+            user_id=create_test_user.id,
+            topic_data=TopicCreate(
+                input_prompt="템플릿 없는 토픽",
+                language="ko"
+            )
+        )
+
+        response = client.post(
+            f"/api/topics/{topic.id}/generate",
+            headers=auth_headers,
+            json={"topic": "템플릿 없음", "plan": "계획"}
+        )
+
+        assert response.status_code == 404
+        body = response.json()
+        assert body["success"] is False
+        assert body["error"]["code"] == "TEMPLATE.NOT_FOUND"
+
+    def test_tc_002_artifact_status_states(self, client, auth_headers, create_test_user):
+        """TC-002: Artifact 상태 전이 - scheduled → generating → completed"""
+        # 사전: 토픽 생성
+        topic = TopicDB.create_topic(
+            user_id=create_test_user.id,
+            topic_data=TopicCreate(
+                input_prompt="Test artifact status",
+                language="ko"
+            )
+        )
+
+        mock_markdown = """# 보고서 요약
+상세한 요약 내용입니다. 충분한 길이를 확보했습니다.
+
+## 배경
+배경 섹션의 상세한 내용입니다.
+
+## 주요 내용
+주요 내용 섹션입니다.
+
+## 결론
+결론 섹션의 상세한 내용입니다."""
+
+        with patch('app.utils.claude_client.ClaudeClient.generate_report') as mock_claude:
+            mock_claude.return_value = mock_markdown
+
+            # 생성 시작
+            generate_resp = client.post(
+                f"/api/topics/{topic.id}/generate",
+                headers=auth_headers,
+                json={
+                    "topic": "Test topic",
+                    "plan": "Test plan"
+                }
+            )
+            assert generate_resp.status_code == 202
+
+            # Artifact가 생성되었는지 확인 (202 응답은 Artifact 생성을 의미)
+            assert generate_resp.json()["success"] is True
+            response_data = generate_resp.json()["data"]
+
+            # Artifact ID 확인
+            assert "topic_id" in response_data
+            assert response_data["status"] == "generating"
+
+            # 즉시 status 조회 - "generating" 상태여야 함
+            status_resp = client.get(
+                f"/api/topics/{topic.id}/status",
+                headers=auth_headers
+            )
+            assert status_resp.status_code == 200
+            status_data = status_resp.json()["data"]
+
+            # 상태 확인: scheduled 또는 generating
+            assert status_data["status"] in ["scheduled", "generating"]
+            assert status_data["progress_percent"] >= 0
+
+    def test_tc_003_concurrent_generation(self, client, auth_headers, create_test_user):
+        """TC-003: 동시 다중 생성 - 3개 Topic 동시 생성"""
+        # 사전: 3개 토픽 생성
+        topics = [
+            TopicDB.create_topic(
+                user_id=create_test_user.id,
+                topic_data=TopicCreate(
+                    input_prompt=f"Test topic {i}",
+                    language="ko"
+                )
+            )
+            for i in range(3)
+        ]
+
+        mock_markdown = """# 보고서 요약
+상세한 요약 내용입니다. 충분한 길이를 확보했습니다.
+
+## 배경
+배경 섹션의 상세한 내용입니다.
+
+## 주요 내용
+주요 내용 섹션입니다.
+
+## 결론
+결론 섹션의 상세한 내용입니다."""
+
+        with patch('app.utils.claude_client.ClaudeClient.generate_report') as mock_claude:
+            mock_claude.return_value = mock_markdown
+
+            # 동시 생성 시작
+            generate_results = [
+                client.post(
+                    f"/api/topics/{t.id}/generate",
+                    headers=auth_headers,
+                    json={"topic": f"Test {t.id}", "plan": "Plan"}
+                )
+                for t in topics
+            ]
+
+            # 모두 202 Accepted
+            for resp in generate_results:
+                assert resp.status_code == 202
+
+            # 상태 동시 조회
+            status_results = [
+                client.get(
+                    f"/api/topics/{t.id}/status",
+                    headers=auth_headers
+                )
+                for t in topics
+            ]
+
+            # 모두 "generating" 상태
+            for status_resp in status_results:
+                assert status_resp.status_code == 200
+                assert status_resp.json()["data"]["status"] == "generating"
+
+    def test_tc_004_artifact_metadata(self, client, auth_headers, create_test_user):
+        """TC-004: Artifact 메타데이터 - ID, 경로, 버전 정보 확인"""
+        # 사전: 토픽 생성
+        topic = TopicDB.create_topic(
+            user_id=create_test_user.id,
+            topic_data=TopicCreate(
+                input_prompt="Test artifact metadata",
+                language="ko"
+            )
+        )
+
+        mock_markdown = """# 보고서 요약
+상세한 요약 내용입니다.
+
+## 배경
+배경 섹션의 상세한 내용입니다.
+
+## 주요 내용
+주요 내용 섹션입니다.
+
+## 결론
+결론 섹션의 상세한 내용입니다."""
+
+        with patch('app.utils.claude_client.ClaudeClient.generate_report') as mock_claude:
+            mock_claude.return_value = mock_markdown
+
+            # 생성 시작
+            generate_resp = client.post(
+                f"/api/topics/{topic.id}/generate",
+                headers=auth_headers,
+                json={
+                    "topic": "Test topic",
+                    "plan": "Test plan"
+                }
+            )
+            assert generate_resp.status_code == 202
+
+            # Status 조회
+            status_resp = client.get(
+                f"/api/topics/{topic.id}/status",
+                headers=auth_headers
+            )
+            assert status_resp.status_code == 200
+
+            data = status_resp.json()["data"]
+
+            # Artifact 메타데이터 확인
+            assert "artifact_id" in data
+            assert "status" in data
+            assert "progress_percent" in data
+            assert "started_at" in data
+
+            # progress_percent 범위 확인
+            assert 0 <= data["progress_percent"] <= 100
+
+    def test_tc_005_status_response_time(self, client, auth_headers, create_test_user):
+        """TC-005: Status 엔드포인트 응답 시간 - 10회 연속 조회 < 100ms"""
+        # 사전: 토픽 생성
+        topic = TopicDB.create_topic(
+            user_id=create_test_user.id,
+            topic_data=TopicCreate(
+                input_prompt="Test response time",
+                language="ko"
+            )
+        )
+
+        mock_markdown = """# 보고서 요약
+상세한 요약 내용입니다.
+
+## 배경
+배경 섹션의 상세한 내용입니다.
+
+## 주요 내용
+주요 내용 섹션입니다.
+
+## 결론
+결론 섹션의 상세한 내용입니다."""
+
+        with patch('app.utils.claude_client.ClaudeClient.generate_report') as mock_claude:
+            mock_claude.return_value = mock_markdown
+
+            # 생성 시작
+            client.post(
+                f"/api/topics/{topic.id}/generate",
+                headers=auth_headers,
+                json={
+                    "topic": "Test topic",
+                    "plan": "Test plan"
+                }
+            )
+
+            # 응답 시간 측정 (10회 반복)
+            import time
+            response_times = []
+
+            for _ in range(10):
+                start = time.time()
+                resp = client.get(
+                    f"/api/topics/{topic.id}/status",
+                    headers=auth_headers
+                )
+                elapsed = time.time() - start
+                response_times.append(elapsed)
+
+                assert resp.status_code == 200
+
+            # 최대 응답 시간 확인
+            max_time = max(response_times)
+            assert max_time < 0.1, f"Max response time {max_time:.3f}s, expected < 0.1s"

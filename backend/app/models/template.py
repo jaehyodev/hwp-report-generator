@@ -106,6 +106,7 @@ class TemplateDetailResponse(BaseModel):
     file_size: int = Field(..., description="파일 크기 (bytes)")
     placeholders: List[PlaceholderResponse] = Field(..., description="플레이스홀더 목록")
     prompt_system: Optional[str] = Field(None, description="동적 생성된 System Prompt")
+    prompt_user: Optional[str] = Field(None, description="사용자 정의 System Prompt")
     created_at: datetime = Field(..., description="생성 일시")
 
 

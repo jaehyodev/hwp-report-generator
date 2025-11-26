@@ -331,6 +331,64 @@ Claude: Unit Spec 작성
 
 ---
 
-**마지막 업데이트:** 2025-11-12
-**버전:** 2.4.0
-**상태:** ✅ Sequential Planning + Real-time Progress Tracking 완성
+### v2.5 (2025-11-14) - Event Loop Non-Blocking + Task Exception Handling
+
+✅ **Event Loop Blocking 문제 해결**
+- 백그라운드 보고서 생성 중 모든 동기 작업을 `asyncio.to_thread()` 감싸기
+- Claude API, DB 작업, 파일 I/O 모두 별도 스레드에서 실행
+- 응답: POST `/generate` < 1초, GET `/status` < 100ms 달성
+
+✅ **Task 예외 처리 강화**
+- `asyncio.create_task()` 후 `add_done_callback()` 추가
+- Task 실패 시 `mark_failed()` 자동 호출
+- 예외 로그 명확하게 기록
+
+✅ **개발 환경 설정**
+- `main.py`의 `uvicorn.run(..., reload=False)` 변경
+- 메모리 상태 손실 문제 해결
+
+✅ **테스트 추가**
+- TC-001: Event Loop Non-Blocking (응답 시간 < 100ms)
+- TC-002: Task 예외 처리 (실패 시 상태 업데이트)
+- TC-003: 동시 다중 생성 (3개 Topic 동시 생성)
+- TC-004: 로그 검증 (예외 발생 시 ERROR 로그)
+- TC-005: 응답 시간 검증 (10회 반복 조회 < 100ms)
+- **5/5 테스트 통과** (100%)
+
+### 주요 코드 변경
+
+**topics.py의 _background_generate_report():**
+```python
+# ❌ 이전 (blocking)
+markdown = claude.generate_report(topic=topic)
+
+# ✅ 이후 (non-blocking)
+markdown = await asyncio.to_thread(
+    claude.generate_report,
+    topic=topic
+)
+```
+
+**generate_report_background()의 예외 처리:**
+```python
+# ✅ Task 예외 처리 추가
+task = asyncio.create_task(_background_generate_report(...))
+
+def handle_task_result(t: asyncio.Task):
+    try:
+        t.result()
+    except Exception as e:
+        logger.error(f"Task failed: {str(e)}", exc_info=True)
+
+task.add_done_callback(handle_task_result)
+```
+
+### Unit Spec
+- 파일: `backend/doc/specs/20251114_fix_background_generation_event_loop_blocking.md`
+- 8개 섹션: 요구사항, 흐름도, 5개 테스트 케이스, 에러 처리, 체크리스트
+
+---
+
+**마지막 업데이트:** 2025-11-14
+**버전:** 2.5.0
+**상태:** ✅ Event Loop Non-Blocking + Task Exception Handling 완성

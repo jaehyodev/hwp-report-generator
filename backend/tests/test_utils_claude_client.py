@@ -151,6 +151,31 @@ class TestClaudeClientGenerateReport:
 
         assert "API Error" in str(exc_info.value)
 
+    @patch.dict('os.environ', {'CLAUDE_API_KEY': 'test_api_key'})
+    @patch('app.utils.claude_client.Anthropic')
+    def test_generate_report_with_plan_text(self, mock_anthropic_class, mock_claude_response):
+        """Plan 텍스트가 사용자 메시지에 포함되는지 확인"""
+        mock_client_instance = Mock()
+        mock_anthropic_class.return_value = mock_client_instance
+        mock_client_instance.messages.create.return_value = mock_claude_response
+
+        client = ClaudeClient()
+        plan_text = "# 계획\n- 섹션1\n- 섹션2"
+
+        client.generate_report(
+            topic="테스트 주제",
+            plan_text=plan_text,
+            system_prompt="CUSTOM_SYSTEM",
+            isWebSearch=False
+        )
+
+        call_kwargs = mock_client_instance.messages.create.call_args.kwargs
+        sent_message = call_kwargs["messages"][0]["content"]
+
+        assert "보고서 계획" in sent_message
+        assert "섹션1" in sent_message
+        assert call_kwargs["system"] == "CUSTOM_SYSTEM"
+
 
 @pytest.mark.unit
 class TestClaudeClientChatCompletion:

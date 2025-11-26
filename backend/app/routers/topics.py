@@ -4,6 +4,7 @@ Topic management API router.
 Handles CRUD operations for topics (conversation threads).
 """
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from typing import Optional
 import asyncio
 import json
@@ -32,7 +33,6 @@ from app.utils.markdown_builder import build_report_md
 from app.utils.file_utils import next_artifact_version, build_artifact_paths, write_text, sha256_of
 from app.utils.claude_client import ClaudeClient
 from app.utils.prompts import (
-    FINANCIAL_REPORT_SYSTEM_PROMPT,
     create_topic_context_message,
     get_system_prompt,
 )
@@ -44,10 +44,6 @@ from app.database.template_db import TemplateDB
 
 # Sequential Planning 관련 모듈
 from app.utils.sequential_planning import sequential_planning, SequentialPlanningError, TimeoutError as SequentialPlanningTimeout
-from app.utils.generation_status import (
-    update_generation_status, get_generation_status, clear_generation_status,
-    is_generating, init_generation_status, update_progress, mark_completed, mark_failed
-)
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
@@ -114,211 +110,6 @@ async def create_topic(
             details={"error": str(e)},
             hint="잠시 후 다시 시도해주세요."
         )
-
-
-@router.post("/generate", summary="주제 입력 → 보고서 생성 → MD 저장")
-async def generate_topic_report(
-    topic_data: TopicCreate,
-    current_user: User = Depends(get_current_active_user)
-):
-    """사용자 주제를 받아 Claude로 보고서 생성, 토픽/메시지/아티팩트/사용량 저장 후 경로 반환.
-
-    Request Body:
-        - input_prompt: 사용자가 입력한 주제(필수)
-        - language: 기본 'ko'
-        - template_id: 동적 system prompt 생성에 사용할 템플릿 ID (선택)
-
-    Returns:
-        { "topic_id": int, "artifact_id": int }
-        
-    에러 코드:
-        - VALIDATION.REQUIRED_FIELD: 입력 주제가 비어있음
-        - TEMPLATE.NOT_FOUND: 지정된 템플릿을 찾을 수 없음
-        - SERVER.SERVICE_UNAVAILABLE: Claude API 호출 실패
-        - REPORT_GENERATION_FAILED: 보고서 생성 처리 중 오류
-    """
-    try:
-        # === 1단계: 입력 검증 ===
-        logger.info(f"[GENERATE] Start - user_id={current_user.id}")
-        
-        if not topic_data.input_prompt or not topic_data.input_prompt.strip():
-            logger.warning(f"[GENERATE] Empty input - user_id={current_user.id}")
-            return error_response(
-                code=ErrorCode.VALIDATION_REQUIRED_FIELD,
-                http_status=400,
-                message="입력 주제가 비어있습니다.",
-                hint="3자 이상 내용을 입력해주세요."
-            )
-
-        # === 2단계: System Prompt 선택 (우선순위: custom > template > default) ===
-        logger.info(f"[GENERATE] Selecting system prompt - template_id={topic_data.template_id}")
-
-        try:
-            system_prompt = get_system_prompt(
-                custom_prompt=None,  # /generate에서는 custom prompt 미지원
-                template_id=topic_data.template_id,
-                user_id=current_user.id
-            )
-        except InvalidTemplateError as e:
-            logger.warning(f"[GENERATE] Template error - code={e.code}, message={e.message}")
-            return error_response(
-                code=e.code,
-                http_status=e.http_status,
-                message=e.message,
-                hint=e.hint
-            )
-        except ValueError as e:
-            logger.error(f"[GENERATE] Invalid arguments - error={str(e)}")
-            return error_response(
-                code=ErrorCode.SERVER_INTERNAL_ERROR,
-                http_status=500,
-                message="시스템 오류가 발생했습니다.",
-                details={"error": str(e)}
-            )
-
-        # === 3단계: Claude API 호출 ===
-        logger.info(f"[GENERATE] Calling Claude API - prompt_length={len(system_prompt)}")
-        
-        start_ms = time.time()
-        
-        try:
-            # Topic을 사용자 메시지로 전달
-            user_message = create_topic_context_message(topic_data.input_prompt.strip())
-            claude = ClaudeClient()
-            response_text, input_tokens, output_tokens = claude.chat_completion(
-                [user_message],
-                system_prompt
-            )
-            
-            latency_ms = int((time.time() - start_ms) * 1000)
-            
-            logger.info(f"[GENERATE] Claude response received - input_tokens={input_tokens}, output_tokens={output_tokens}, latency_ms={latency_ms}")
-            
-        except Exception as e:
-            logger.error(f"[GENERATE] Claude API call failed - error={str(e)}")
-            return error_response(
-                code=ErrorCode.SERVER_SERVICE_UNAVAILABLE,
-                http_status=503,
-                message="AI 응답 생성 중 오류가 발생했습니다.",
-                details={"error": str(e)},
-                hint="잠시 후 다시 시도해주세요."
-            )
-
-        # === 4단계: Markdown 파싱 및 제목 추출 ===
-        logger.info(f"[GENERATE] Parsing markdown content")
-        
-        result = parse_markdown_to_content(response_text)
-        generated_title = result.get("title") or "보고서"
-        
-        logger.info(f"[GENERATE] Parsed - title={generated_title}")
-
-        # === 5단계: Topic 생성 ===
-        logger.info(f"[GENERATE] Creating topic")
-        
-        topic = TopicDB.create_topic(current_user.id, topic_data)
-        TopicDB.update_topic(topic.id, TopicUpdate(generated_title=generated_title))
-        
-        logger.info(f"[GENERATE] Topic created - topic_id={topic.id}")
-
-        # === 6단계: 메시지 저장 (User) ===
-        logger.info(f"[GENERATE] Saving user message - topic_id={topic.id}")
-        
-        user_msg = MessageDB.create_message(
-            topic.id,
-            MessageCreate(role=MessageRole.USER, content=topic_data.input_prompt.strip())
-        )
-        
-        logger.info(f"[GENERATE] User message saved - message_id={user_msg.id}")
-
-        # === 7단계: 메시지 저장 (Assistant) ===
-        logger.info(f"[GENERATE] Saving assistant message - topic_id={topic.id}")
-        
-        assistant_msg = MessageDB.create_message(
-            topic.id,
-            MessageCreate(role=MessageRole.ASSISTANT, content=response_text)
-        )
-        
-        logger.info(f"[GENERATE] Assistant message saved - message_id={assistant_msg.id}")
-
-        # === 8단계: Markdown 파일 저장 ===
-        logger.info(f"[GENERATE] Saving MD artifact - topic_id={topic.id}")
-        
-        try:
-            md_text = build_report_md(result)
-            version = next_artifact_version(topic.id, ArtifactKind.MD, topic_data.language)
-            _, md_path = build_artifact_paths(topic.id, version, "report.md")
-            bytes_written = write_text(md_path, md_text)
-            file_hash = sha256_of(md_path)
-            
-            logger.info(f"[GENERATE] File written - size={bytes_written}, hash={file_hash[:16]}...")
-            
-        except Exception as e:
-            logger.error(f"[GENERATE] Failed to save artifact - error={str(e)}")
-            return error_response(
-                code=ErrorCode.ARTIFACT_CREATION_FAILED,
-                http_status=500,
-                message="응답 파일 저장 중 오류가 발생했습니다.",
-                details={"error": str(e)}
-            )
-
-        # === 9단계: 아티팩트 레코드 저장 ===
-        logger.info(f"[GENERATE] Creating artifact record")
-        
-        artifact = ArtifactDB.create_artifact(
-            topic.id,
-            assistant_msg.id,
-            ArtifactCreate(
-                kind=ArtifactKind.MD,
-                locale=topic_data.language,
-                version=version,
-                filename=md_path.name,
-                file_path=str(md_path),
-                file_size=bytes_written,
-                sha256=file_hash,
-            )
-        )
-        
-        logger.info(f"[GENERATE] Artifact created - artifact_id={artifact.id}, version={artifact.version}")
-
-        # === 10단계: AI 사용량 저장 ===
-        logger.info(f"[GENERATE] Saving AI usage - message_id={assistant_msg.id}")
-        
-        try:
-            AiUsageDB.create_ai_usage(
-                topic.id,
-                assistant_msg.id,
-                AiUsageCreate(
-                    model=claude.model,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    latency_ms=latency_ms,
-                )
-            )
-            
-            logger.info(f"[GENERATE] AI usage saved")
-            
-        except Exception as e:
-            logger.error(f"[GENERATE] Failed to save AI usage - error={str(e)}")
-            # 사용량 저장 실패는 치명적이지 않으므로 계속 진행
-
-        # === 11단계: 성공 응답 반환 ===
-        logger.info(f"[GENERATE] Success - topic_id={topic.id}, artifact_id={artifact.id}")
-        
-        return success_response({
-            "topic_id": topic.id,
-            "artifact_id": artifact.id
-        })
-
-    except Exception as e:
-        logger.error(f"[GENERATE] Unexpected error - error={str(e)}")
-        # Claude 호출/파일/DB 어느 단계에서도 예외 처리
-        return error_response(
-            code=ErrorCode.REPORT_GENERATION_FAILED,
-            http_status=500,
-            message="보고서 생성 처리 중 오류가 발생했습니다.",
-            details={"error": str(e)}
-        )
-
 
 @router.get("", summary="Get user's topics")
 async def get_my_topics(
@@ -608,13 +399,13 @@ async def delete_topic(
         )
 
 
-@router.post("/{topic_id}/ask", summary="Ask question in conversation")
+@router.post("/{topic_id}/ask", summary="Ask question in conversation - Artifact state machine")
 async def ask(
     topic_id: int,
     body: AskRequest,
     current_user: User = Depends(get_current_active_user)
 ):
-    """대화(Conversation) 맵핑에서 질문을 수행합니다.
+    """대화(Conversation) 맵핑에서 질문을 수행합니다. - Artifact 상태 머신 패턴 적용
 
     매개변수(Args):
         - topic_id: 질문이 속한 주제의 ID
@@ -622,7 +413,7 @@ async def ask(
         - current_user: 인증된 사용자 정보
 
     반환(Returns):
-        사용자 메시지(user_message), AI 응답(assistant_message),  
+        사용자 메시지(user_message), AI 응답(assistant_message),
         생성된 아티팩트(artifact), 토큰 사용 정보(usage)를 포함한 표준 ApiResponse 객체를 반환합니다.
 
     에러 코드(Error Codes):
@@ -640,7 +431,7 @@ async def ask(
     # === 1단계: 권한 및 검증 ===
     logger.info(f"[ASK] Start - topic_id={topic_id}, user_id={current_user.id}")
 
-    topic = TopicDB.get_topic_by_id(topic_id)
+    topic = await asyncio.to_thread(TopicDB.get_topic_by_id, topic_id)
     if not topic:
         logger.warning(f"[ASK] Topic not found - topic_id={topic_id}")
         return error_response(
@@ -655,6 +446,15 @@ async def ask(
             code=ErrorCode.TOPIC_UNAUTHORIZED,
             http_status=403,
             message="이 토픽에 접근할 권한이 없습니다."
+        )
+
+    if not topic.template_id:
+        logger.warning(f"[ASK] Template missing on topic - topic_id={topic_id}")
+        return error_response(
+            code=ErrorCode.TEMPLATE_NOT_FOUND,
+            http_status=404,
+            message="이 토픽에는 템플릿이 지정되어 있지 않습니다.",
+            hint="계획을 먼저 생성 후 시도해 주세요."
         )
 
     content = (body.content or "").strip()
@@ -678,7 +478,8 @@ async def ask(
 
     # === 2단계: 사용자 메시지 저장 ===
     logger.info(f"[ASK] Saving user message - topic_id={topic_id}, length={len(content)}")
-    user_msg = MessageDB.create_message(
+    user_msg = await asyncio.to_thread(
+        MessageDB.create_message,
         topic_id,
         MessageCreate(role=MessageRole.USER, content=content)
     )
@@ -688,7 +489,10 @@ async def ask(
     reference_artifact = None
     if body.artifact_id is not None:
         logger.info(f"[ASK] Loading specified artifact - artifact_id={body.artifact_id}")
-        reference_artifact = ArtifactDB.get_artifact_by_id(body.artifact_id)
+        reference_artifact = await asyncio.to_thread(
+            ArtifactDB.get_artifact_by_id,
+            body.artifact_id
+        )
 
         if not reference_artifact:
             logger.warning(f"[ASK] Artifact not found - artifact_id={body.artifact_id}")
@@ -716,7 +520,8 @@ async def ask(
             )
     else:
         logger.info(f"[ASK] Loading latest MD artifact - topic_id={topic_id}")
-        reference_artifact = ArtifactDB.get_latest_artifact_by_kind(
+        reference_artifact = await asyncio.to_thread(
+            ArtifactDB.get_latest_artifact_by_kind,
             topic_id, ArtifactKind.MD, topic.language
         )
         if reference_artifact:
@@ -727,15 +532,21 @@ async def ask(
     # === 4단계: 컨텍스트 구성 ===
     logger.info(f"[ASK] Building context - topic_id={topic_id}")
 
-    all_messages = MessageDB.get_messages_by_topic(topic_id)
+    all_messages = await asyncio.to_thread(
+        MessageDB.get_messages_by_topic,
+        topic_id
+    )
     logger.info(f"[ASK] Total messages in topic: {len(all_messages)}")
 
     # User 메시지 필터링
     user_messages = [m for m in all_messages if m.role == MessageRole.USER]
 
-    # ✨ NEW: artifact_id가 **명시적으로** 지정된 경우에만, 해당 message 이전 것만 포함
+    # artifact_id가 **명시적으로** 지정된 경우에만, 해당 message 이전 것만 포함
     if body.artifact_id is not None and reference_artifact:
-        ref_msg = MessageDB.get_message_by_id(reference_artifact.message_id)
+        ref_msg = await asyncio.to_thread(
+            MessageDB.get_message_by_id,
+            reference_artifact.message_id
+        )
         if ref_msg:
             # reference message의 seq_no까지만 포함
             user_messages = [m for m in user_messages if m.seq_no <= ref_msg.seq_no]
@@ -750,7 +561,10 @@ async def ask(
     # Assistant 메시지 필터링 (참조 문서 생성 메시지만)
     assistant_messages = []
     if reference_artifact:
-        ref_msg = MessageDB.get_message_by_id(reference_artifact.message_id)
+        ref_msg = await asyncio.to_thread(
+            MessageDB.get_message_by_id,
+            reference_artifact.message_id
+        )
         if ref_msg:
             assistant_messages = [ref_msg]
             logger.info(f"[ASK] Including reference assistant message - message_id={ref_msg.id}")
@@ -839,13 +653,14 @@ async def ask(
             hint="max_messages를 줄이거나 include_artifact_content를 false로 설정해주세요."
         )
 
-    # === 4단계: System Prompt 선택 (우선순위: template > default) ===
-    logger.info(f"[ASK] Selecting system prompt - template_id={body.template_id}")
+    # === 5단계: System Prompt 선택 (우선순위: template > default) ===
+    logger.info(f"[ASK] Selecting system prompt - template_id={topic.template_id}")
 
     try:
-        system_prompt = get_system_prompt(
+        system_prompt = await asyncio.to_thread(
+            get_system_prompt,
             custom_prompt=None,
-            template_id=body.template_id,
+            template_id=topic.template_id,
             user_id=current_user.id
         )
     except InvalidTemplateError as e:
@@ -865,7 +680,7 @@ async def ask(
             details={"error": str(e)}
         )
 
-    # === 5단계: Claude 호출 ===
+    # === 6단계: Claude 호출 ===
     logger.info(f"[ASK] Calling Claude API - messages={len(claude_messages)}")
 
     try:
@@ -874,7 +689,8 @@ async def ask(
         claude_client = ClaudeClient()
         response_text, input_tokens, output_tokens = claude_client.chat_completion(
             claude_messages,
-            system_prompt
+            system_prompt,
+            isWebSearch=body.is_web_search
         )
 
         latency_ms = int((time.time() - t0) * 1000)
@@ -891,15 +707,21 @@ async def ask(
             hint="잠시 후 다시 시도해주세요."
         )
 
-    # === 6단계: 응답 형태 판별 ===
+    # === 7단계: 응답 형태 판별 ===
     logger.info(f"[ASK] Detecting response type")
     # TODO: is report 판별 로직 개선 필요
-    #is_report = is_report_content(response_text)
-    is_report = True # 임시: 항상 보고서로 간주 (나중에 변경 Claude 자동 변경 금지)
+    try:
+        #is_report = is_report_content(response_text)
+        is_report = True  # 항상 보고서로 간주 임시 
+    except Exception as detector_error:
+        logger.warning(
+            f"[ASK] Failed to detect response type, defaulting to report - error={detector_error}"
+        )
+        is_report = True
 
     logger.info(f"[ASK] Response type detected - is_report={is_report}")
 
-    # === 6-1단계: 질문 응답일 경우 콘텐츠 추출 ===
+    # === 7-1단계: 질문 응답일 경우 콘텐츠 추출 ===
     message_content = response_text
     if not is_report:
         logger.info(f"[ASK] Question response detected - extracting pure content")
@@ -911,49 +733,57 @@ async def ask(
         else:
             logger.warning(f"[ASK] Question response but extraction returned empty, using original")
 
-    # === 6-2단계: Assistant 메시지 저장 (항상 저장) ===
+    # === 7-2단계: Assistant 메시지 저장 (항상 저장) ===
     logger.info(f"[ASK] Saving assistant message - topic_id={topic_id}, length={len(message_content)}")
 
-    asst_msg = MessageDB.create_message(
+    asst_msg = await asyncio.to_thread(
+        MessageDB.create_message,
         topic_id,
         MessageCreate(role=MessageRole.ASSISTANT, content=message_content)
     )
 
     logger.info(f"[ASK] Assistant message saved - message_id={asst_msg.id}, seq_no={asst_msg.seq_no}")
 
-    # === 7단계: 조건부 MD 파일 저장 ===
+    # === 8단계: 조건부 MD 파일 저장 (Artifact 상태 머신 패턴) ===
     artifact = None
 
     if is_report:
-        logger.info(f"[ASK] Saving MD artifact (report content)")
+        logger.info(f"[ASK] Saving MD artifact (report content - Artifact state machine)")
 
         try:
-            # Markdown 파싱 및 제목 추출
+            # Step 1: Markdown 파싱 및 제목 추출
             logger.info(f"[ASK] Parsing markdown content")
-            result = parse_markdown_to_content(response_text)
+            result = await asyncio.to_thread(parse_markdown_to_content, response_text)
             generated_title = result.get("title") or "보고서"
             logger.info(f"[ASK] Parsed successfully - title={generated_title}")
 
-            # 마크다운 빌드
-            md_text = build_report_md(result)
+            # Step 2: 마크다운 빌드
+            md_text = await asyncio.to_thread(build_report_md, result)
             logger.info(f"[ASK] Built markdown - length={len(md_text)}")
 
-            # 버전 계산
-            version = next_artifact_version(topic_id, ArtifactKind.MD, topic.language)
+            # Step 3: 버전 계산
+            version = await asyncio.to_thread(
+                next_artifact_version,
+                topic_id, ArtifactKind.MD, topic.language
+            )
             logger.info(f"[ASK] Artifact version - version={version}")
 
-            # 파일 경로 생성
-            base_dir, md_path = build_artifact_paths(topic_id, version, "report.md")
+            # Step 4: 파일 경로 생성
+            base_dir, md_path = await asyncio.to_thread(
+                build_artifact_paths,
+                topic_id, version, "report.md"
+            )
             logger.info(f"[ASK] Artifact path - path={md_path}")
 
-            # 파일 저장 (파싱된 마크다운만)
-            bytes_written = write_text(md_path, md_text)
-            file_hash = sha256_of(md_path)
+            # Step 5: 파일 저장 (파싱된 마크다운만)
+            bytes_written = await asyncio.to_thread(write_text, md_path, md_text)
+            file_hash = await asyncio.to_thread(sha256_of, md_path)
 
             logger.info(f"[ASK] File written - size={bytes_written}, hash={file_hash[:16]}...")
 
-            # Artifact DB 레코드 생성
-            artifact = ArtifactDB.create_artifact(
+            # ✅ Step 6: Artifact DB 레코드 생성 (status="completed" + 모든 파일 정보 포함)
+            artifact = await asyncio.to_thread(
+                ArtifactDB.create_artifact,
                 topic_id,
                 asst_msg.id,
                 ArtifactCreate(
@@ -961,13 +791,16 @@ async def ask(
                     locale=topic.language,
                     version=version,
                     filename=md_path.name,
-                    file_path=str(md_path),
+                    file_path=str(md_path),  # ✅ 완료 상태로 파일 정보 완전히 populated
                     file_size=bytes_written,
-                    sha256=file_hash
+                    sha256=file_hash,
+                    status="completed",  # ✅ 명시적으로 completed 상태
+                    progress_percent=100,  # ✅ 100% 완료
+                    completed_at=datetime.utcnow().isoformat()  # ✅ 완료 시간 기록
                 )
             )
 
-            logger.info(f"[ASK] Artifact created - artifact_id={artifact.id}, version={artifact.version}")
+            logger.info(f"[ASK] Artifact created - artifact_id={artifact.id}, version={artifact.version}, status={artifact.status}")
 
         except Exception as e:
             logger.error(f"[ASK] Failed to save artifact - error={str(e)}")
@@ -980,11 +813,12 @@ async def ask(
     else:
         logger.info(f"[ASK] No artifact created (question/conversation response)")
 
-    # === 8단계: AI 사용량 저장 ===
+    # === 9단계: AI 사용량 저장 ===
     logger.info(f"[ASK] Saving AI usage - message_id={asst_msg.id}")
 
     try:
-        AiUsageDB.create_ai_usage(
+        await asyncio.to_thread(
+            AiUsageDB.create_ai_usage,
             topic_id,
             asst_msg.id,
             AiUsageCreate(
@@ -1001,7 +835,7 @@ async def ask(
         logger.error(f"[ASK] Failed to save AI usage - error={str(e)}")
         # 사용량 저장 실패는 치명적이지 않으므로 계속 진행
 
-    # === 9단계: 성공 응답 반환 ===
+    # === 10단계: 성공 응답 반환 ===
     logger.info(f"[ASK] Success - topic_id={topic_id}, has_artifact={artifact is not None}")
 
     return success_response({
@@ -1051,7 +885,8 @@ async def plan_report(
         plan_result = await sequential_planning(
             topic=request.topic,
             template_id=request.template_id,
-            user_id=current_user.id
+            user_id=current_user.id,
+            is_web_search=request.is_web_search
         )
 
         # 새로운 topic 생성 또는 기존 topic 조회
@@ -1064,18 +899,10 @@ async def plan_report(
         elapsed = time.time() - start_time
         logger.info(f"[PLAN] Completed - topic_id={topic.id}, elapsed={elapsed:.2f}s")
 
-        # PlanSection 모델로 변환
-        sections = [
-            PlanSection(**s) if isinstance(s, dict) else s
-            for s in plan_result.get("sections", [])
-        ]
-
         return success_response(
             PlanResponse(
                 topic_id=topic.id,
                 plan=plan_result["plan"],
-                sections=sections,
-                estimated_sections_count=len(sections)
             )
         )
 
@@ -1123,19 +950,16 @@ async def generate_report_background(
     current_user: User = Depends(get_current_active_user),
     background_tasks = None
 ):
-    """보고서 생성 시작 (백그라운드 asyncio task)
+    """보고서 생성 시작 (백그라운드 asyncio task + Artifact 상태 관리)
 
     사용자가 승인한 계획을 바탕으로 보고서 생성을 백그라운드에서 시작합니다.
-
-    응답시간 제약: 반드시 1초 이내
-
+    Artifact을 즉시 생성하여 Frontend에서 진행 상황을 모니터링할 수 있습니다.
+    
     Args:
         topic_id: 토픽 ID
-        request: GenerateRequest 모델
-            - topic: 보고서 주제
-            - plan: Sequential Planning에서 받은 계획
-            - template_id: 템플릿 ID (선택)
+        request: GenerateRequest 모델 (topic, plan, isWebSearch 만 포함)
         current_user: 인증된 사용자
+        background_tasks: FastAPI background tasks (unused, use asyncio.create_task instead)
 
     Returns:
         202 Accepted - GenerateResponse 포함
@@ -1163,41 +987,76 @@ async def generate_report_background(
                 message="이 토픽에 접근할 권한이 없습니다."
             )
 
-        # 중복 생성 확인
-        if is_generating(topic_id):
-            logger.warning(f"[GENERATE] Already generating - topic_id={topic_id}")
+        if not topic.template_id:
+            logger.warning(f"[GENERATE] Template missing on topic - topic_id={topic_id}")
             return error_response(
-                code=ErrorCode.CONFLICT,
-                http_status=409,
-                message="이미 이 토픽에 대한 보고서 생성이 진행 중입니다."
+                code=ErrorCode.TEMPLATE_NOT_FOUND,
+                http_status=404,
+                message="이 토픽에는 템플릿이 지정되어 있지 않습니다.",
+                hint="/api/topics/plan 호출 후 템플릿이 지정된 토픽을 사용해주세요."
             )
 
-        # 초기 상태 설정
-        init_generation_status(topic_id)
-        logger.info(f"[GENERATE] Status initialized - topic_id={topic_id}")
+        template_id = topic.template_id
 
-        # 백그라운드 task 생성
-        asyncio.create_task(
+        # ✅ NEW: Artifact 즉시 생성 (status="scheduled", file_path=NULL)
+        # ✅ CHANGED: kind를 HWPX에서 MD로 변경 (더 빠른 생성)
+        logger.info(f"[GENERATE] Creating artifact - topic_id={topic_id}")
+        
+        artifact = await asyncio.to_thread(
+            ArtifactDB.create_artifact,
+            topic_id,
+            None,  # message_id (background task이므로 None)
+            ArtifactCreate(
+                kind=ArtifactKind.MD,  # ✅ MD 파일로 즉시 생성
+                locale="ko",
+                version=1,
+                filename="report.md",  # ✅ MD 파일명
+                file_path=None,  # ✅ NULL during work
+                file_size=0,
+                status="scheduled",  # ✅ Scheduled state
+                progress_percent=0,
+                started_at=datetime.utcnow().isoformat()
+            )
+        )
+        
+        logger.info(f"[GENERATE] Artifact created - topic_id={topic_id}, artifact_id={artifact.id}")
+
+        # 백그라운드 task 생성 (예외 처리 포함)
+        task = asyncio.create_task(
             _background_generate_report(
                 topic_id=topic_id,
+                artifact_id=artifact.id,
                 topic=request.topic,
                 plan=request.plan,
-                template_id=request.template_id,
-                user_id=current_user.id
+                template_id=template_id,
+                user_id=current_user.id,
+                is_web_search=request.is_web_search
             )
         )
 
-        elapsed = time.time() - start_time
-        logger.info(f"[GENERATE] Task created - topic_id={topic_id}, elapsed={elapsed:.2f}s")
+        # ✅ Task 예외 처리: 실패 시 로그 기록
+        def handle_task_result(t: asyncio.Task):
+            try:
+                t.result()
+            except asyncio.CancelledError:
+                logger.warning(f"[BACKGROUND] Task cancelled - topic_id={topic_id}")
+            except Exception as e:
+                logger.error(f"[BACKGROUND] Task failed with unhandled exception - topic_id={topic_id}, error={str(e)}", exc_info=True)
 
-        return success_response(
+        task.add_done_callback(handle_task_result)
+
+        elapsed = time.time() - start_time
+        logger.info(f"[GENERATE] Task created - topic_id={topic_id}, artifact_id={artifact.id}, elapsed={elapsed:.2f}s")
+
+        response_dict = success_response(
             GenerateResponse(
                 topic_id=topic_id,
                 status="generating",
                 message="Report generation started in background",
                 status_check_url=f"/api/topics/{topic_id}/status"
-            )
+            ).model_dump()
         )
+        return JSONResponse(content=response_dict, status_code=202)
 
     except Exception as e:
         logger.error(f"[GENERATE] Unexpected error - error={str(e)}", exc_info=True)
@@ -1214,9 +1073,11 @@ async def get_generation_status_endpoint(
     topic_id: int,
     current_user: User = Depends(get_current_active_user)
 ):
-    """보고서 생성 상태 조회 (폴링용)
+    """보고서 생성 상태 조회 (폴링용) - Artifact 기반 상태 추적
 
-    현재 보고서 생성의 진행 상태를 조회합니다.
+    현재 보고서 생성의 진행 상태를 Artifact 테이블에서 조회합니다.
+    
+    ✅ 변경사항: MD artifact 상태 조회 (HWPX 대신)
 
     응답시간 제약: < 500ms
 
@@ -1229,7 +1090,7 @@ async def get_generation_status_endpoint(
     """
     try:
         # Topic 조회 및 권한 확인
-        topic = TopicDB.get_topic_by_id(topic_id)
+        topic = await asyncio.to_thread(TopicDB.get_topic_by_id, topic_id)
         if not topic:
             logger.warning(f"[STATUS] Topic not found - topic_id={topic_id}")
             return error_response(
@@ -1246,31 +1107,36 @@ async def get_generation_status_endpoint(
                 message="이 토픽에 접근할 권한이 없습니다."
             )
 
-        # 생성 상태 조회
-        status = get_generation_status(topic_id)
+        # ✅ CHANGED: Artifact 테이블에서 최신 MD artifact 조회 (HWPX 대신)
+        logger.info(f"[STATUS] Querying artifact - topic_id={topic_id}")
+        artifact = await asyncio.to_thread(
+            ArtifactDB.get_latest_artifact_by_kind,
+            topic_id,
+            ArtifactKind.MD  # ✅ MD artifact로 변경
+        )
 
-        if status is None:
-            logger.debug(f"[STATUS] No generation status found - topic_id={topic_id}")
+        if artifact is None:
+            logger.debug(f"[STATUS] No artifact found - topic_id={topic_id}")
             return error_response(
                 code=ErrorCode.NOT_FOUND,
                 http_status=404,
                 message=f"토픽 {topic_id}의 생성 상태를 찾을 수 없습니다."
             )
 
-        # StatusResponse 모델로 변환
+        # ✅ StatusResponse 모델로 변환 (Artifact 데이터 매핑)
         response_data = StatusResponse(
             topic_id=topic_id,
-            status=status.get("status"),
-            progress_percent=status.get("progress_percent", 0),
-            current_step=status.get("current_step"),
-            started_at=status.get("started_at"),
-            estimated_completion=status.get("estimated_completion"),
-            artifact_id=status.get("artifact_id"),
-            completed_at=status.get("completed_at"),
-            error_message=status.get("error_message")
+            artifact_id=artifact.id,
+            status=artifact.status,
+            progress_percent=artifact.progress_percent,
+            current_step=None,  # current_step은 legacy field, Artifact에는 없음
+            started_at=artifact.started_at,
+            completed_at=artifact.completed_at,
+            file_path=artifact.file_path,  # ✅ 작업 중에는 NULL, 완료 시 populated
+            error_message=artifact.error_message
         )
 
-        logger.debug(f"[STATUS] Retrieved - topic_id={topic_id}, status={status.get('status')}")
+        logger.debug(f"[STATUS] Retrieved - topic_id={topic_id}, artifact_id={artifact.id}, status={artifact.status}, progress={artifact.progress_percent}%")
 
         return success_response(response_data)
 
@@ -1289,7 +1155,9 @@ async def stream_generation_status(
     topic_id: int,
     current_user: User = Depends(get_current_active_user)
 ):
-    """보고서 생성 완료 알림 (SSE 스트림)
+    """보고서 생성 완료 알림 (SSE 스트림) - Artifact 기반 폴링
+    
+    ✅ 변경사항: MD artifact 상태 폴링 (HWPX 대신)
 
     클라이언트가 연결을 유지하면서 대기하다가 보고서 생성이 완료되면
     서버에서 이벤트를 푸시합니다.
@@ -1302,7 +1170,7 @@ async def stream_generation_status(
         SSE 스트림 응답 (text/event-stream)
     """
     # Topic 조회 및 권한 확인
-    topic = TopicDB.get_topic_by_id(topic_id)
+    topic = await asyncio.to_thread(TopicDB.get_topic_by_id, topic_id)
     if not topic:
         logger.warning(f"[STREAM] Topic not found - topic_id={topic_id}")
         return error_response(
@@ -1322,46 +1190,56 @@ async def stream_generation_status(
     logger.info(f"[STREAM] Started - topic_id={topic_id}, user_id={current_user.id}")
 
     async def event_generator():
-        """SSE 이벤트 생성기"""
+        """✅ SSE 이벤트 생성기 (Artifact 테이블 폴링)"""
         max_wait_time = 3600  # 1시간 타임아웃
         start_time = time.time()
-        last_status = None
+        last_artifact = None
         check_interval = 0.5  # 0.5초마다 상태 확인
 
         try:
             while time.time() - start_time < max_wait_time:
-                current_status = get_generation_status(topic_id)
+                # ✅ CHANGED: Artifact 테이블에서 최신 MD artifact 조회 (HWPX 대신)
+                artifact = await asyncio.to_thread(
+                    ArtifactDB.get_latest_artifact_by_kind,
+                    topic_id,
+                    ArtifactKind.MD  # ✅ MD artifact로 변경
+                )
 
-                # 상태가 없는 경우 (아직 시작되지 않음)
-                if current_status is None:
+                # Artifact가 없는 경우 (아직 생성되지 않음)
+                if artifact is None:
                     await asyncio.sleep(check_interval)
                     continue
 
-                # 상태가 변경되었으면 이벤트 발송
-                if current_status != last_status:
+                # ✅ Artifact 상태가 변경되었으면 이벤트 발송
+                if last_artifact is None or (
+                    artifact.status != last_artifact.status or
+                    artifact.progress_percent != last_artifact.progress_percent
+                ):
                     # Status update 이벤트
                     event_data = {
-                        "event": "status_update" if current_status.get("status") == "generating" else "completion",
-                        "status": current_status.get("status"),
-                        "progress_percent": current_status.get("progress_percent", 0)
+                        "event": "status_update" if artifact.status == "generating" else "completion",
+                        "artifact_id": artifact.id,
+                        "status": artifact.status,
+                        "progress_percent": artifact.progress_percent
                     }
                     yield f"data: {json.dumps(event_data)}\n\n"
 
-                    logger.debug(f"[STREAM] Event sent - topic_id={topic_id}, event={event_data['event']}")
+                    logger.debug(f"[STREAM] Event sent - topic_id={topic_id}, artifact_id={artifact.id}, event={event_data['event']}, progress={artifact.progress_percent}%")
 
-                    last_status = current_status.copy()
+                    last_artifact = artifact
 
                     # 완료 또는 실패 시 종료
-                    if current_status.get("status") in ["completed", "failed"]:
+                    if artifact.status in ["completed", "failed"]:
                         # 최종 completion 이벤트
                         final_event = {
                             "event": "completion",
-                            "status": current_status.get("status"),
-                            "artifact_id": current_status.get("artifact_id"),
-                            "error_message": current_status.get("error_message")
+                            "artifact_id": artifact.id,
+                            "status": artifact.status,
+                            "file_path": artifact.file_path,
+                            "error_message": artifact.error_message
                         }
                         yield f"data: {json.dumps(final_event)}\n\n"
-                        logger.info(f"[STREAM] Final event sent - topic_id={topic_id}, status={current_status.get('status')}")
+                        logger.info(f"[STREAM] Final event sent - topic_id={topic_id}, artifact_id={artifact.id}, status={artifact.status}")
                         break
 
                 # 상태 확인 대기
@@ -1380,43 +1258,61 @@ async def stream_generation_status(
 
 async def _background_generate_report(
     topic_id: int,
+    artifact_id: int,
     topic: str,
     plan: str,
     template_id: Optional[int],
-    user_id: str
+    user_id: str,
+    is_web_search: bool = False
 ):
-    """백그라운드에서 실제 보고서 생성 (기존 generate 로직 통합)
+    """백그라운드에서 실제 보고서 생성 (Artifact 상태 관리)
+
+    모든 동기 작업은 asyncio.to_thread()로 감싸져 event loop을 블로킹하지 않습니다.
+    Artifact 상태를 점진적으로 업데이트합니다. MD 파일을 생성하고 저장합니다.
 
     Args:
         topic_id: 토픽 ID
+        artifact_id: Artifact ID (상태 업데이트용)
         topic: 보고서 주제
         plan: Sequential Planning에서 받은 계획
-        template_id: 템플릿 ID (선택)
+        template_id: 템플릿 ID (필수, 누락 시 실패)
         user_id: 사용자 ID
+        is_web_search: Claude 웹 검색 활성화 여부
     """
+    if not template_id:
+        raise InvalidTemplateError(
+            code=ErrorCode.TEMPLATE_NOT_FOUND,
+            http_status=404,
+            message="템플릿 정보가 지정되지 않은 토픽입니다.",
+            hint="/api/topics/plan 호출 후 템플릿이 지정된 토픽을 사용해주세요."
+        )
+
     try:
-        logger.info(f"[BACKGROUND] Report generation started - topic_id={topic_id}")
+        logger.info(f"[BACKGROUND] Report generation started - topic_id={topic_id}, artifact_id={artifact_id}")
 
         # === Step 1: 진행 상태 업데이트 ===
-        update_progress(
-            topic_id,
-            progress_percent=10,
-            current_step="Preparing content..."
+        logger.info(f"[BACKGROUND] Preparing content - topic_id={topic_id}")
+        await asyncio.to_thread(
+            ArtifactDB.update_artifact_status,
+            artifact_id=artifact_id,
+            status="generating",
+            progress_percent=10
         )
 
-        # === Step 2: Claude API 호출 ===
+        # === Step 2: Claude API 호출 (non-blocking) ===
         logger.info(f"[BACKGROUND] Calling Claude API - topic_id={topic_id}")
-        update_progress(
-            topic_id,
-            progress_percent=20,
-            current_step="Calling Claude API..."
+        await asyncio.to_thread(
+            ArtifactDB.update_artifact_status,
+            artifact_id=artifact_id,
+            status="generating",
+            progress_percent=20
         )
 
-        # 기존 generate 엔드포인트의 로직 활용
         claude = ClaudeClient()
 
         # System prompt 선택
-        system_prompt = get_system_prompt(
+        system_prompt = await asyncio.to_thread(
+            get_system_prompt,
             template_id=template_id,
             user_id=int(user_id) if isinstance(user_id, str) else user_id
         )
@@ -1425,7 +1321,14 @@ async def _background_generate_report(
         user_prompt = f"주제: {topic}\n\n계획:\n{plan}\n\n위의 계획을 바탕으로 상세한 보고서를 작성해주세요."
 
         start_time = time.time()
-        markdown = claude.generate_report(topic=topic)
+        # ✅ Non-blocking: Claude API 호출을 스레드 끝에서 실행
+        markdown = await asyncio.to_thread(
+            claude.generate_report,
+            topic=topic,
+            user_prompt=user_prompt,
+            system_prompt=system_prompt,
+            isWebSearch=is_web_search
+        )
         latency_ms = int((time.time() - start_time) * 1000)
 
         input_tokens = claude.last_input_tokens
@@ -1435,62 +1338,90 @@ async def _background_generate_report(
 
         # === Step 3: 마크다운 파싱 및 변환 ===
         logger.info(f"[BACKGROUND] Parsing markdown - topic_id={topic_id}")
-        update_progress(
-            topic_id,
-            progress_percent=50,
-            current_step="Processing markdown..."
+        await asyncio.to_thread(
+            ArtifactDB.update_artifact_status,
+            artifact_id=artifact_id,
+            status="generating",
+            progress_percent=50
         )
 
-        parsed_content = parse_markdown_to_content(markdown)
-        built_markdown = build_report_md(parsed_content)
-
-        # === Step 4: 파일 저장 ===
-        logger.info(f"[BACKGROUND] Saving files - topic_id={topic_id}")
-        update_progress(
-            topic_id,
-            progress_percent=70,
-            current_step="Saving to storage..."
+        # ✅ Non-blocking: 파싱을 스레드 끝에서 실행
+        parsed_content = await asyncio.to_thread(
+            parse_markdown_to_content,
+            markdown
+        )
+        built_markdown = await asyncio.to_thread(
+            build_report_md,
+            parsed_content
         )
 
-        topic_obj = TopicDB.get_topic_by_id(topic_id)
+        # === Step 4: MD 파일 저장 ===
+        logger.info(f"[BACKGROUND] Saving MD file - topic_id={topic_id}")
+        await asyncio.to_thread(
+            ArtifactDB.update_artifact_status,
+            artifact_id=artifact_id,
+            status="generating",
+            progress_percent=70
+        )
+
+        # ✅ Non-blocking: DB 조회를 스레드 끝에서 실행
+        topic_obj = await asyncio.to_thread(
+            TopicDB.get_topic_by_id,
+            topic_id
+        )
         version = next_artifact_version(topic_id, ArtifactKind.MD, topic_obj.language)
         base_dir, md_path = build_artifact_paths(topic_id, version, "report.md")
 
-        bytes_written = write_text(md_path, built_markdown)
-        file_hash = sha256_of(md_path)
-
-        logger.info(f"[BACKGROUND] Files saved - topic_id={topic_id}, size={bytes_written}")
-
-        # === Step 5: DB 저장 ===
-        logger.info(f"[BACKGROUND] Saving to database - topic_id={topic_id}")
-        update_progress(
-            topic_id,
-            progress_percent=85,
-            current_step="Saving metadata..."
+        # ✅ Non-blocking: 파일 I/O를 스레드 끝에서 실행
+        bytes_written = await asyncio.to_thread(
+            write_text,
+            md_path,
+            built_markdown
+        )
+        file_hash = await asyncio.to_thread(
+            sha256_of,
+            md_path
         )
 
-        assistant_msg = MessageDB.create_message(
+        logger.info(f"[BACKGROUND] MD file saved - topic_id={topic_id}, size={bytes_written}")
+
+        # === Step 5: DB 저장 (메시지 + Artifact 업데이트) ===
+        logger.info(f"[BACKGROUND] Saving to database Artifact - topic_id={topic_id}")
+        await asyncio.to_thread(
+            ArtifactDB.update_artifact_status,
+            artifact_id=artifact_id,
+            status="generating",
+            progress_percent=85
+        )
+
+        # ✅ Non-blocking: 메시지 생성을 스레드 끝에서 실행
+        logger.info(f"[BACKGROUND] Saving to database Message - topic_id={topic_id}")
+        assistant_msg = await asyncio.to_thread(
+            MessageDB.create_message,
             topic_id,
             MessageCreate(role=MessageRole.ASSISTANT, content=built_markdown)
         )
 
-        artifact = ArtifactDB.create_artifact(
-            topic_id,
-            assistant_msg.id,
-            ArtifactCreate(
-                kind=ArtifactKind.MD,
-                locale="ko",
-                version=version,
-                filename=md_path.name,
-                file_path=str(md_path),
-                file_size=bytes_written,
-                sha256=file_hash
-            )
+        # ✅ Step 6: Artifact 상태 업데이트 + 파일 정보 추가 (완료)
+        logger.info(f"[BACKGROUND] Updating artifact - topic_id={topic_id}, artifact_id={artifact_id}")
+        completed_at = datetime.utcnow().isoformat()
+        
+        await asyncio.to_thread(
+            ArtifactDB.update_artifact_status,
+            artifact_id=artifact_id,
+            status="completed",
+            progress_percent=100,
+            message_id=assistant_msg.id,
+            file_path=str(md_path),  # ✅ MD 파일 경로 저장
+            file_size=bytes_written,
+            sha256=file_hash,
+            completed_at=completed_at
         )
 
-        # AI 사용량 저장
+        # AI 사용량 저장 (non-critical, 실패 무시)
         try:
-            AiUsageDB.create_ai_usage(
+            await asyncio.to_thread(
+                AiUsageDB.create_ai_usage,
                 topic_id,
                 assistant_msg.id,
                 AiUsageCreate(
@@ -1503,10 +1434,19 @@ async def _background_generate_report(
         except Exception as e:
             logger.error(f"[BACKGROUND] Failed to save AI usage - error={str(e)}")
 
-        # === Step 6: 완료 상태 업데이트 ===
-        logger.info(f"[BACKGROUND] Report generation completed - topic_id={topic_id}, artifact_id={artifact.id}")
-        mark_completed(topic_id, artifact.id)
+        logger.info(f"[BACKGROUND] Report generation completed - topic_id={topic_id}, artifact_id={artifact_id}")
 
     except Exception as e:
-        logger.error(f"[BACKGROUND] Report generation failed - topic_id={topic_id}, error={str(e)}", exc_info=True)
-        mark_failed(topic_id, str(e))
+        logger.error(f"[BACKGROUND] Report generation failed - topic_id={topic_id}, artifact_id={artifact_id}, error={str(e)}", exc_info=True)
+
+        # ✅ Update Artifact status to failed
+        try:
+            await asyncio.to_thread(
+                ArtifactDB.update_artifact_status,
+                artifact_id=artifact_id,
+                status="failed",
+                error_message=str(e),
+                completed_at=datetime.utcnow().isoformat()
+            )
+        except Exception as db_error:
+            logger.error(f"[BACKGROUND] Failed to update artifact status - error={str(db_error)}")

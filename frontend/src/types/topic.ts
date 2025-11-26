@@ -36,11 +36,11 @@ export interface TopicListResponse {
 
 // Ask API Request
 export interface AskRequest {
-    content: string
-    artifact_id?: number | null
-    include_artifact_content?: boolean
-    max_messages?: number | null
-    system_prompt?: string | null
+  content: string;
+  artifact_id?: number | null;
+  include_artifact_content?: boolean;
+  max_messages?: number | null;
+  isWebSearch?: boolean;
 }
 
 // Ask API Response

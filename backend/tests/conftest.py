@@ -3,6 +3,7 @@ Pytest fixtures 및 설정
 """
 import os
 import sys
+import uuid
 import pytest
 import tempfile
 import shutil
@@ -23,6 +24,9 @@ from app.database.connection import get_db_connection, init_db
 from app.database.user_db import UserDB
 from app.models.user import UserCreate
 from app.utils.auth import hash_password
+from app.database.topic_db import TopicDB
+from app.database.template_db import TemplateDB
+from app.models.template import TemplateCreate
 
 
 @pytest.fixture(scope="function")
@@ -186,3 +190,40 @@ def sample_hwpx_content():
         "main_content": "주요 내용",
         "conclusion": "결론 및 제언"
     }
+
+
+@pytest.fixture(autouse=True)
+def auto_assign_topic_template(test_db, monkeypatch, request):
+    """토픽 생성 시 template_id가 비어 있으면 자동 템플릿을 부여한다.
+
+    대부분의 API 테스트는 /ask 및 /{topic_id}/generate 엔드포인트 호출 전에
+    토픽이 템플릿을 보유하고 있어야 하므로, 테스트 편의상 자동으로 템플릿을
+    생성하여 topics.template_id 필드에 주입한다. 특정 테스트에서 템플릿이 없는
+    상태를 검증하려면 `@pytest.mark.allow_topic_without_template` 마커를 사용한다.
+    """
+
+    if request.node.get_closest_marker("allow_topic_without_template"):
+        yield
+        return
+
+    original_create_topic = TopicDB.create_topic
+
+    def _create_topic_with_template(user_id, topic_data):
+        template_id = getattr(topic_data, "template_id", None)
+        if template_id is None:
+            auto_template = TemplateDB.create_template(
+                user_id,
+                TemplateCreate(
+                    title=f"[AUTO] Default Template {uuid.uuid4()}",
+                    filename="auto_template.hwpx",
+                    file_path=f"/tmp/auto_template_{uuid.uuid4().hex}.hwpx",
+                    file_size=0,
+                    sha256="auto",
+                    prompt_system="## AUTO TEMPLATE"
+                )
+            )
+            topic_data.template_id = auto_template.id
+        return original_create_topic(user_id, topic_data)
+
+    monkeypatch.setattr(TopicDB, "create_topic", staticmethod(_create_topic_with_template))
+    yield

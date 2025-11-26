@@ -2,7 +2,9 @@
 
 **작성일:** 2025-11-13
 **버전:** 1.0
-**상태:** ✅ 구현 완료
+**상태:** 🛑 아카이브 (기능 제거)
+
+> **업데이트 (2025-11-16):** `backend/app/utils/prompt_filter.py`, `_get_guidance_prompt()`의 필터링 로직, `_create_planning_prompt()` 헬퍼가 모두 제거되었습니다. 이 문서는 당시 구현 배경 기록용으로만 남아 있으며, 최신 Sequential Planning 경로에는 적용되지 않습니다.
 
 ---
 
@@ -29,8 +31,8 @@
 
 | 구분 | 파일명 | 작업 |
 |------|--------|------|
-| **New** | `backend/app/utils/prompt_filter.py` | 신규 생성 (약 100줄) |
-| **Change** | `backend/app/utils/sequential_planning.py` | `_get_guidance_prompt()` 함수 수정 |
+| ~~New~~ (삭제됨) | `backend/app/utils/prompt_filter.py` | 2025-11-16에 제거됨 |
+| ~~Change~~ (원복) | `backend/app/utils/sequential_planning.py` | `_get_guidance_prompt()` 필터링/`_create_planning_prompt()` 제거 |
 | **Reference** | `backend/app/models/template.py` | Template.prompt_system 구조 참고 |
 | **Reference** | `backend/app/database/template_db.py` | Template 조회 로직 참고 |
 
@@ -38,7 +40,7 @@
 
 ## 3. 흐름도
 
-### Sequential Planning 데이터 흐름
+### Sequential Planning 데이터 흐름 (아카이브)
 
 ```mermaid
 sequenceDiagram
@@ -65,15 +67,15 @@ sequenceDiagram
     else 템플릿 없음
         SP->>SP: default_guidance 사용
     end
-
-    SP->>SP: _create_planning_prompt()
     SP->>Claude: chat_completion_fast()
     Claude-->>SP: JSON 계획
     SP-->>API: 계획 + 섹션 배열
     API-->>User: 200 OK + 계획
 ```
 
-### 필터링 함수 로직
+> 현재 버전에서는 **별도 필터링 모듈과 `_create_planning_prompt()` 호출이 존재하지 않으므로**, 이하 섹션은 과거 동작만을 설명합니다.
+
+### 필터링 함수 로직 (아카이브)
 
 ```mermaid
 graph TD

@@ -29,6 +29,9 @@ wheels/
 .installed.cfg
 *.egg
 
+# Codex
+.codex/
+
 # Claude
 .serena/
 
@@ -41,7 +44,6 @@ env.bak/
 venv.bak/
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo

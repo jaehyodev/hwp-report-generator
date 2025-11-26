@@ -14,10 +14,11 @@
 8. [표준 API 응답 규격](#표준-api-응답-규격)
 9. [핵심 API 설계](#핵심-api-설계)
 10. [보고서 생성 프로세스](#보고서-생성-프로세스)
-11. [주요 컴포넌트](#주요-컴포넌트)
-12. [테스트 가이드](#테스트-가이드)
-13. [개발 가이드라인](#개발-가이드라인)
-14. [트러블슈팅](#트러블슈팅)
+11. [컴포넌트 간 의존관계](#컴포넌트-간-의존관계) ⭐ **NEW**
+12. [주요 컴포넌트](#주요-컴포넌트)
+13. [테스트 가이드](#테스트-가이드)
+14. [개발 가이드라인](#개발-가이드라인)
+15. [트러블슈팅](#트러블슈팅)
 
 ---
 
@@ -121,7 +122,7 @@ HWP Report Generator는 사용자가 주제를 입력하면 Claude API를 활용
 ┌────────────────────▼─────────────────────────────┐
 │         Data Access Layer (Database)             │
 │  user_db / topic_db / message_db / artifact_db   │
-│  ai_usage_db / transformation_db                 │
+│  ai_usage_db / transformation_db / template_db   │
 └────────────────────┬─────────────────────────────┘
                      │
 ┌────────────────────▼─────────────────────────────┐
@@ -132,42 +133,54 @@ HWP Report Generator는 사용자가 주제를 입력하면 Claude API를 활용
 
 ### 핵심 라우터 (6개)
 
-1. **auth** - 인증 (회원가입, 로그인, 비밀번호 변경)
-2. **topics** - 주제 관리 + /generate, /plan, /ask 엔드포인트 ⭐
-3. **messages** - 메시지 조회/생성
-4. **artifacts** - 아티팩트 조회/변환/다운로드
-5. **admin** - 관리자 기능 (사용자 관리, 통계)
-6. **reports** - 레거시 (Deprecated)
+| 라우터 | 주요 엔드포인트 | 역할 |
+|--------|-----------------|------|
+| **auth** | `/api/auth/register`, `/api/auth/login` | 사용자 인증 (회원가입, 로그인) |
+| **topics** ⭐ | `/api/topics`, `/api/topics/{id}/generate`, `/api/topics/{id}/plan`, `/api/topics/{id}/ask` | 주제 관리 + 보고서 생성/계획/질문 (v2.4 핵심) |
+| **messages** | `/api/topics/{topic_id}/messages` | 메시지 조회/생성 |
+| **artifacts** | `/api/artifacts/{artifact_id}`, `/api/artifacts/{artifact_id}/download` | 아티팩트 조회/변환/다운로드 |
+| **admin** | `/api/admin/users`, `/api/admin/token-usage` | 관리자 대시보드 |
+| **reports** | ⚠️ Deprecated | 레거시 v1.0 호환성 유지 |
 
 ### 핵심 유틸리티 (20+ 모듈)
 
 **AI 통합:**
-- `claude_client.py` - Claude API 통신
+- `claude_client.py` - Claude API 호출 (Markdown 반환)
 - `prompts.py` - 시스템 프롬프트 중앙 관리
-- `sequential_planning.py` - v2.4 Sequential Planning (계획 수립)
-- `generation_status.py` - v2.4 백그라운드 생성 상태 추적
+- `sequential_planning.py` (219줄) - Sequential Planning으로 계획 수립
+- `generation_status.py` (298줄) - 백그라운드 생성 상태 추적 (97% 커버리지)
+- `response_detector.py` (231줄) - 응답 형태 자동 판별 (질문 vs 보고서)
 
 **파일 처리:**
-- `hwp_handler.py` - HWPX 처리
-- `artifact_manager.py` - 파일 저장/관리 추상화
+- `hwp_handler.py` - HWPX 파일 처리 (unzip/replace/rezip)
+- `artifact_manager.py` - 아티팩트 파일 저장/관리 추상화
 - `md_handler.py` - Markdown 파일 I/O
-- `markdown_parser.py` - Markdown 파싱
-- `markdown_builder.py` - Markdown 생성
-- `file_utils.py` - 파일 유틸 (버전, 해시)
+- `markdown_parser.py` - Markdown을 섹션으로 파싱
+- `markdown_builder.py` - 섹션을 Markdown으로 변환
+- `file_utils.py` - 버전 관리, SHA256 해시 계산
 
 **인증/보안:**
-- `auth.py` - JWT, bcrypt 비밀번호 처리
-- `response_helper.py` - 표준 API 응답 헬퍼
+- `auth.py` - JWT 생성/검증, bcrypt 비밀번호 해싱
+- `response_helper.py` - 표준 API 응답 포맷팅 (ErrorCode 클래스)
 
 ### 데이터베이스 (11 테이블)
 
+**핵심 테이블:**
 - `users` - 사용자 계정
 - `topics` - 대화 주제
 - `messages` - 메시지 (user/assistant/system)
-- `artifacts` - 생성 파일 (MD, HWPX)
-- `ai_usage` - AI 사용량 추적
-- `transformations` - 파일 변환 이력
-- `reports`, `token_usage` - Deprecated (v1 호환성)
+- `artifacts` - 생성 파일 (MD, HWPX) + 버전
+- `ai_usage` - AI 사용량 추적 (메시지별)
+
+**v2.2 신규:**
+- `templates` - 보고서 템플릿 + prompt_system (동적 프롬프트)
+- `placeholders` - 템플릿 플레이스홀더 추적
+
+**추적:**
+- `transformations` - 파일 변환 이력 (MD→HWPX, 향후 번역)
+
+**Deprecated (v1 호환성):**
+- `reports`, `token_usage` - 향후 제거 예정
 
 ### 데이터 플로우 (v2.4 확장)
 
@@ -961,156 +974,155 @@ User Input → Ask API → Context Build → Claude API
 
 ---
 
+## 컴포넌트 간 의존관계
+
+### 라우터 → 데이터베이스 의존성
+
+| 라우터 | TopicDB | MessageDB | ArtifactDB | UserDB | TemplateDB | TransformationDB |
+|--------|---------|-----------|-----------|--------|-----------|------------------|
+| **auth.py** | - | - | - | ✅ | - | - |
+| **topics.py** ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ | - |
+| **messages.py** | ✅ | ✅ | - | ✅ | - | - |
+| **artifacts.py** | - | - | ✅ | ✅ | - | ✅ |
+| **templates.py** | - | - | - | ✅ | ✅ | - |
+| **admin.py** | - | - | - | ✅ | - | - |
+
+### 라우터 → 유틸리티 의존성
+
+| 라우터 | ClaudeClient | ArtifactManager | GenerationStatus | Sequential<br/>Planning | Response<br/>Detector |
+|--------|--------------|-----------------|------------------|------------------------|----------------------|
+| **topics.py** ⭐ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **artifacts.py** | - | ✅ | - | - | - |
+| **auth.py** | - | - | - | - | - |
+| **messages.py** | - | - | - | - | - |
+
+### 주요 흐름별 의존성
+
+**1️⃣ 백그라운드 보고서 생성 (/generate)**
+```
+POST /generate
+    ↓
+GenerateRequest (모델)
+    ↓
+TopicDB.create_topic() + MessageDB.create_message()
+    ↓
+asyncio.create_task(_background_generate_report)
+    ↓ (별도 스레드)
+GenerationStatus → ClaudeClient → ArtifactManager → ArtifactDB
+    ↓ (상태 추적)
+GET /status 또는 /status/stream
+```
+
+**2️⃣ Sequential Planning (/plan)**
+```
+POST /plan (PlanRequest)
+    ↓
+TemplateDB.get_template()
+    ↓
+sequential_planning() (Claude Sequential Planning API)
+    ↓
+PlanResponse (마크다운 계획 + 섹션)
+```
+
+**3️⃣ 메시지 체이닝 (/ask)**
+```
+POST /ask (AskRequest)
+    ↓
+MessageDB.create_message() + TopicDB.get_topic()
+    ↓
+ClaudeClient.chat_completion()
+    ↓
+response_detector.detect_response_type()
+    ├→ [질문] MessageResponse만 반환
+    └→ [보고서] ArtifactDB.create_artifact() + 응답
+    ↓
+ArtifactDB.get_artifacts_by_message()
+```
+
+---
+
 ## 주요 컴포넌트
 
-### 1. Response Helper (`utils/response_helper.py`)
+### 카테고리별 주요 컴포넌트
 
-API 응답 표준화를 위한 헬퍼 함수 모음.
+#### 🔐 응답 & 보안
 
-**주요 함수:**
-- `success_response(data, feedback)` - 성공 응답 생성
-- `error_response(code, http_status, message, details, hint)` - 에러 응답 생성
+**1. Response Helper** (`utils/response_helper.py`)
+- API 응답 표준화 (`success_response()`, `error_response()`)
+- ErrorCode: 100+ 에러 코드 (DOMAIN.DETAIL 형식)
 
-**ErrorCode 클래스:**
-```python
-ErrorCode.AUTH_INVALID_TOKEN
-ErrorCode.TOPIC_NOT_FOUND
-ErrorCode.MESSAGE_CREATION_FAILED
-ErrorCode.ARTIFACT_DOWNLOAD_FAILED
-ErrorCode.VALIDATION_REQUIRED_FIELD
-ErrorCode.SERVER_DATABASE_ERROR
-```
+**2. Auth Utils** (`utils/auth.py`)
+- JWT 토큰 생성/검증
+- bcrypt 비밀번호 해싱
+- 권한 검증 (`get_current_user()`, `get_current_admin_user()`)
 
-### 2. System Prompts (`utils/prompts.py`) - v2.1
+---
 
-시스템 프롬프트 중앙 관리 모듈.
+#### 🤖 AI & 프롬프트 통합
 
-**주요 상수:**
-- `FINANCIAL_REPORT_SYSTEM_PROMPT` - 금융 보고서 작성용 시스템 프롬프트 (통합)
-- `TOPIC_CONTEXT_TEMPLATE` - 주제 컨텍스트 메시지 템플릿 (데이터와 분리)
+**3. System Prompts** (`utils/prompts.py`) - v2.1
+- 중앙집중식 프롬프트 관리
+- `FINANCIAL_REPORT_SYSTEM_PROMPT` - 금융 보고서 지시사항
+- 설계: 데이터와 지시사항 분리
 
-**설계 원칙:**
-- 시스템 프롬프트는 순수 지시사항만 포함 (데이터 제외)
-- 주제/컨텍스트는 메시지 배열로 전달
-- 중복 방지를 위한 단일 소스 원칙
+**4. Claude Client** (`utils/claude_client.py`)
+- Anthropic Claude API 호출
+- `generate_report()` - Markdown 문자열 반환
+- `chat_completion()` - 대화형 응답 + 토큰 추적
 
-### 3. Claude Client (`utils/claude_client.py`)
+**5. Sequential Planning** (`utils/sequential_planning.py`) - v2.4 신규 (219줄)
+- Claude Sequential Planning API 호출
+- 보고서 계획 수립 (< 2초)
+- 프롬프트 생성 및 응답 파싱
 
-Claude API 통신 클라이언트.
+**6. Response Detector** (`utils/response_detector.py`) - v2.3 신규 (231줄)
+- Claude 응답 자동 분류 (질문 vs 보고서)
+- H2 섹션 감지, 아티팩트 생성 여부 판단
 
-**주요 메서드:**
-- `generate_report(topic)` - **Markdown 문자열 반환** (v2.1에서 Dict → str 변경)
-- `chat_completion(messages, system_prompt)` - 대화형 응답 + 토큰 사용량 추적
+---
 
-**v2.1 변경사항:**
-- `generate_report()`가 Markdown 문자열을 직접 반환 (파싱 제거)
-- 파싱은 호출자가 `parse_markdown_to_content()` 사용
-- `FINANCIAL_REPORT_SYSTEM_PROMPT` 사용
+#### 📊 상태 & 진행 추적
 
-### 4. HWP Handler (`utils/hwp_handler.py`)
+**7. Generation Status** (`utils/generation_status.py`) - v2.4 신규 (298줄, 97% 커버리지)
+- 백그라운드 생성 상태 추적
+- 상태: planning → generating → parsing → saving → complete
+- 메모리 기반 저장소
 
-HWPX 파일 처리.
+---
 
-**주요 기능:**
-- HWPX 템플릿 unzip/컨텐츠 치환/rezip
-- 템플릿 미존재 시 기본 템플릿 생성 (`main.py`)
-- 줄바꿈 처리 (`\n\n` → 새 문단, `\n` → `<hp:lineBreak/>`)
+#### 📄 파일 & Markdown 처리
 
-### 5. Markdown 파서/빌더 (`utils/markdown_parser.py`, `markdown_builder.py`)
+**8. Artifact Manager** (`utils/artifact_manager.py`)
+- 아티팩트 파일 저장/관리 추상화 (로컬 FS, 향후 S3 지원)
+- 경로 생성, 파일 I/O, SHA256 해시
+- 저장 구조: `artifacts/topics/topic_{id}/messages/msg_{message_id}_{filename}`
 
-Markdown 파일 파싱 및 생성.
+**9. Markdown Parser** (`utils/markdown_parser.py`)
+- H2 섹션 추출 및 분류
+- 키워드 기반 섹션 분류 (요약/배경/주요내용/결론)
+- `parse_markdown_to_content()` - Markdown → HWP dict
 
-**주요 함수 (markdown_parser.py):**
-- `parse_markdown_to_content(md_text)` - Markdown을 HWP content dict로 변환
-- `extract_all_h2_sections(md_text)` - 모든 H2 섹션 추출 (제목 + 내용)
-- `classify_section(section_title)` - 키워드 기반 섹션 분류
-  - 요약: "요약", "summary", "핵심", "개요"
-  - 배경: "배경", "목적", "background", "추진"
-  - 주요내용: "주요", "내용", "분석", "결과"
-  - 결론: "결론", "제언", "conclusion", "향후", "계획"
+**10. Markdown Builder** (`utils/markdown_builder.py`)
+- 섹션 객체 → Markdown 변환
 
-**v2.1 변경사항:**
-- 동적 섹션 제목 추출 (하드코딩 제거)
-- 키워드 우선순위 조정 (결론 > 배경)
-- H2 섹션 자동 분류 및 매핑
+**11. Markdown Handler** (`utils/md_handler.py`)
+- MD 파일 I/O (UTF-8)
+- `save_md_file()`, `read_md_file()`
 
-### 6. 파일/버전 유틸 (`utils/file_utils.py`)
+**12. HWP Handler** (`utils/hwp_handler.py`)
+- HWPX 템플릿 처리 (unzip/replace/rezip)
+- 플레이스홀더 치환, 줄바꿈 변환
 
-버전 산정, 경로 생성, SHA256 해시 등.
+**13. File Utils** (`utils/file_utils.py`)
+- 버전 산정, SHA256 해시, 파일 경로 생성
 
-### 7. 인증 유틸 (`utils/auth.py`)
+---
 
-JWT 발급/검증, bcrypt 비밀번호 해싱.
+#### 🔄 변환 추적
 
-**주요 함수:**
-- `hash_password(password)` - 비밀번호 해싱
-- `verify_password(plain, hashed)` - 비밀번호 검증
-- `create_access_token(data)` - JWT 생성
-- `decode_access_token(token)` - JWT 디코딩
-- `get_current_user(token)` - 현재 사용자 추출
-- `get_current_active_user()` - 활성 사용자 확인
-- `get_current_admin_user()` - 관리자 확인
-
-### 8. Artifact Manager (`utils/artifact_manager.py`)
-
-아티팩트 파일 저장/관리를 위한 추상화 레이어. 로컬 파일 시스템 지원 (향후 S3, Azure Blob 등 확장 가능).
-
-**주요 메서드:**
-- `generate_artifact_path(topic_id, message_id, filename)` - 아티팩트 저장 경로 생성
-- `store_artifact(content, filepath, is_binary)` - 파일 저장 (텍스트/바이너리)
-- `retrieve_artifact(filepath, is_binary)` - 파일 읽기
-- `delete_artifact(filepath)` - 파일 삭제
-- `calculate_sha256(filepath)` - 파일 해시 계산 (무결성 검증)
-- `get_extension_for_kind(kind)` - ArtifactKind에 맞는 확장자 반환
-- `generate_filename(topic_id, kind, version, locale)` - 표준 파일명 생성
-
-**저장 구조:**
-```
-artifacts/
-└── topics/
-    └── topic_{id}/
-        └── messages/
-            └── msg_{message_id}_{filename}
-```
-
-### 9. Markdown Handler (`utils/md_handler.py`)
-
-Markdown 파일 생성, 읽기, 포맷팅 유틸리티.
-
-**주요 메서드:**
-- `save_md_file(content, filepath)` - Markdown 파일 저장 (UTF-8)
-- `read_md_file(filepath)` - Markdown 파일 읽기
-- `format_report_as_md(report_data)` - 보고서 데이터를 Markdown 포맷으로 변환
-- `parse_md_report(md_content)` - Markdown을 구조화된 데이터로 파싱
-- `get_file_size(filepath)` - 파일 크기 조회
-- `delete_md_file(filepath)` - 파일 삭제
-
-**보고서 구조:**
-- `# 제목`
-- `## 요약`
-- `## 배경 및 목적`
-- `## 주요 내용`
-- `## 결론 및 제언`
-
-### 10. Transformation Tracking (`models/transformation.py`, `database/transformation_db.py`)
-
-파일 변환 및 번역 추적 시스템. 아티팩트 간 변환 관계를 기록하여 변환 이력 추적 가능.
-
-**지원 작업:**
-- `TransformOperation.CONVERT` - 포맷 변환 (MD → HWPX)
-- `TransformOperation.TRANSLATE` - 언어 번역 (KO → EN)
-
-**주요 필드:**
-- `from_artifact_id` - 원본 아티팩트 ID
-- `to_artifact_id` - 변환 결과 아티팩트 ID
-- `operation` - 변환 작업 타입
-- `params_json` - 변환 파라미터 (JSON)
-- `created_at` - 변환 시각
-
-**주요 함수:**
-- `create_transformation(transform_data)` - 변환 기록 생성
-- `get_transformations_from_artifact(artifact_id)` - 특정 아티팩트에서 파생된 변환 조회
-- `get_transformations_to_artifact(artifact_id)` - 특정 아티팩트를 생성한 변환 조회
+**14. Transformation Tracking** (`models/transformation.py`, `database/transformation_db.py`)
+- 아티팩트 변환 이력 추적 (MD→HWPX, 향후 번역)
+- 지원 작업: `CONVERT` (포맷 변환), `TRANSLATE` (언어 번역)
 
 ---
 

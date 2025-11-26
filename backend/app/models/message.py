@@ -87,7 +87,6 @@ class AskRequest(BaseModel):
         artifact_id: Specific artifact to reference (null = use latest MD)
         include_artifact_content: Include file content in context (default: false)
         max_messages: Max number of user messages to include (null = all)
-        template_id: Template ID for dynamic system prompt generation (optional)
     """
 
     content: str = Field(
@@ -114,7 +113,11 @@ class AskRequest(BaseModel):
         description="Maximum number of user messages to include"
     )
 
-    template_id: Optional[int] = Field(
-        default=None,
-        description="Template ID for dynamic system prompt generation"
+    is_web_search: bool = Field(
+        default=False,
+        alias="isWebSearch",
+        description="Enable Claude web search tool (default: false)"
     )
+
+    class Config:
+        populate_by_name = True

@@ -30,7 +30,10 @@ from app.models.template import TemplateCreate
 from app.utils.auth import get_current_active_user
 from app.utils.response_helper import success_response, error_response, ErrorCode
 from app.utils.templates_manager import TemplatesManager
-from app.utils.prompts import create_system_prompt_with_metadata, create_dynamic_system_prompt
+from app.utils.prompts import (
+    create_template_specific_rules,
+    get_base_report_prompt,
+)
 from app.utils.meta_info_generator import generate_placeholder_metadata
 
 router = APIRouter(prefix="/api/templates", tags=["Templates"])
@@ -242,17 +245,17 @@ async def upload_template(
                     from app.utils.meta_info_generator import generate_placeholder_metadata
                     metadata = generate_placeholder_metadata(placeholder_list)
 
-                # [변경] 10단계: 메타정보를 포함한 System Prompt 생성
-                # prompt_user는 None으로 유지 (사용자가 나중에 커스텀 프롬프트를 등록하기 위해 예약)
-                prompt_user = None
-                # metadata를 dict 리스트로 변환 (PlaceholderMetadata 객체 → dict)
-                # 동적 매핑: placeholder_key를 "key" 필드로 매핑하여 prompts.py와 호환
+                # [개선] 10단계: BASE/규칙 분리 저장
+                base_prompt = get_base_report_prompt()
                 metadata_dicts = [
                     {**p.model_dump(), "key": p.placeholder_key}
                     for p in metadata.placeholders
                 ] if metadata else None
-                prompt_system = create_system_prompt_with_metadata(placeholder_list, metadata_dicts)
-                logger.info(f"[UPLOAD_TEMPLATE] System prompt created - length={len(prompt_system)}")
+                template_rules = create_template_specific_rules(placeholder_list, metadata_dicts)
+                logger.info(
+                    f"[UPLOAD_TEMPLATE] Template prompts prepared - base_length={len(base_prompt)}, "
+                    f"rules_length={len(template_rules)}"
+                )
 
                 # [신규] 11단계: DB 트랜잭션으로 Template + Placeholders 원자적 저장
                 template_data = TemplateCreate(
@@ -262,8 +265,8 @@ async def upload_template(
                     file_path="",  # 임시값, 아래에서 업데이트
                     file_size=len(file_content),
                     sha256=sha256,
-                    prompt_user=prompt_user,         # 신규: Placeholder 목록
-                    prompt_system=prompt_system      # 신규: 생성된 System Prompt
+                    prompt_user=base_prompt,
+                    prompt_system=template_rules
                 )
 
                 # create_template_with_transaction: Template + Placeholder 원자적 저장
@@ -454,6 +457,8 @@ async def get_template(
             filename=template.filename,
             file_size=template.file_size,
             placeholders=placeholder_responses,
+            prompt_system=template.prompt_system,
+            prompt_user=template.prompt_user,
             created_at=template.created_at
         )
 
@@ -868,9 +873,9 @@ async def regenerate_template_prompt_system(
                 logger.warning(f"[REGENERATE_PROMPT] Metadata generation failed (non-blocking) - {str(e)}")
                 # 메타정보 생성 실패는 비치명적 (metadata=None으로 계속 진행)
 
-        # 5. 메타정보를 포함한 System Prompt 생성
+        # 5. 메타정보를 포함한 규칙(System Prompt) 생성
         try:
-            new_prompt_system = create_system_prompt_with_metadata(placeholder_keys, metadata_dicts)
+            new_prompt_system = create_template_specific_rules(placeholder_keys, metadata_dicts)
             logger.info(
                 f"[REGENERATE_PROMPT] System prompt generated - template_id={template_id}, "
                 f"prompt_length={len(new_prompt_system)}"

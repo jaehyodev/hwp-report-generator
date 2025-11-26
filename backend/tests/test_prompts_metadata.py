@@ -11,8 +11,8 @@ from app.utils.prompts import (
     create_system_prompt_with_metadata,
     _format_metadata_sections,
     _format_examples,
-    BASE_REPORT_SYSTEM_PROMPT,
-    FINANCIAL_REPORT_SYSTEM_PROMPT,
+    get_base_report_prompt,
+    get_default_report_prompt,
 )
 
 
@@ -22,7 +22,7 @@ class TestCreateSystemPromptWithMetadata:
     def test_empty_placeholders(self):
         """빈 Placeholder 리스트"""
         result = create_system_prompt_with_metadata([])
-        assert result == FINANCIAL_REPORT_SYSTEM_PROMPT
+        assert result == get_default_report_prompt()
 
     def test_single_placeholder_without_metadata(self):
         """메타정보 없이 단일 Placeholder"""
@@ -128,7 +128,7 @@ class TestCreateSystemPromptWithMetadata:
     def test_prompt_contains_base_prompt(self):
         """결과에 베이스 프롬프트 포함"""
         result = create_system_prompt_with_metadata(["{{TITLE}}"])
-        assert BASE_REPORT_SYSTEM_PROMPT in result
+        assert get_base_report_prompt() in result
 
     def test_prompt_length_reasonable(self):
         """프롬프트 길이가 합리적"""
@@ -311,7 +311,7 @@ class TestPromptIntegration:
             assert f"섹션_{i}" in result
 
         # 기본 구조 확인
-        assert BASE_REPORT_SYSTEM_PROMPT in result
+        assert get_base_report_prompt() in result
         assert "커스텀 템플릿 구조" in result
         assert "마크다운 형식" in result
 

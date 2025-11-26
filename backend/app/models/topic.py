@@ -43,6 +43,7 @@ class Topic(BaseModel):
         generated_title: AI-generated title (may be null initially)
         language: Primary language code
         status: Current topic status
+        template_id: Optional template ID used for this topic
         created_at: Creation timestamp
         updated_at: Last update timestamp
     """
@@ -52,11 +53,12 @@ class Topic(BaseModel):
     generated_title: Optional[str] = None
     language: str = "ko"
     status: TopicStatus = TopicStatus.ACTIVE
+    template_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        from_attributes = True  # Pydantic v2
+        from_attributes = True  # Pydantic v2  # Pydantic v2
 
 
 class TopicResponse(BaseModel):
@@ -70,6 +72,7 @@ class TopicResponse(BaseModel):
         generated_title: AI-generated title
         language: Primary language
         status: Topic status
+        template_id: Optional template ID used for this topic
         created_at: Creation timestamp
         updated_at: Last update timestamp
     """
@@ -78,6 +81,7 @@ class TopicResponse(BaseModel):
     generated_title: Optional[str] = None
     language: str
     status: TopicStatus
+    template_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -128,12 +132,19 @@ class PlanRequest(BaseModel):
     """
     topic: str = Field(..., min_length=1, max_length=200, description="보고서 주제")
     template_id: Optional[int] = Field(None, description="템플릿 ID (선택)")
+    is_web_search: bool = Field(
+        default=False,
+        alias="isWebSearch",
+        description="웹 검색 도구 사용 여부 (기본값: false)"
+    )
 
     class Config:
+        populate_by_name = True
         json_schema_extra = {
             "example": {
                 "topic": "AI 시장 분석",
-                "template_id": 1
+                "template_id": 1,
+                "isWebSearch": True
             }
         }
 
@@ -160,14 +171,10 @@ class PlanResponse(BaseModel):
 
     Attributes:
         topic_id: 토픽 ID
-        plan: Markdown 형식의 계획 문서
-        sections: 섹션 목록
-        estimated_sections_count: 예상 섹션 수
+        plan: 평문 형식의 계획 문서
     """
     topic_id: int
     plan: str
-    sections: list[PlanSection]
-    estimated_sections_count: int
 
 
 class GenerateRequest(BaseModel):
@@ -178,18 +185,22 @@ class GenerateRequest(BaseModel):
     Attributes:
         topic: 보고서 주제 (필수)
         plan: Sequential Planning에서 받은 계획 (필수)
-        template_id: 사용할 템플릿 ID (선택)
     """
     topic: str = Field(..., min_length=1, max_length=200, description="보고서 주제")
     plan: str = Field(..., min_length=1, description="Sequential Planning에서 받은 계획")
-    template_id: Optional[int] = Field(None, description="템플릿 ID (선택)")
+    is_web_search: bool = Field(
+        default=False,
+        alias="isWebSearch",
+        description="웹 검색 도구 사용 여부 (기본값: false)"
+    )
 
     class Config:
+        populate_by_name = True
         json_schema_extra = {
             "example": {
                 "topic": "AI 시장 분석",
                 "plan": "# 보고서 계획\n## 개요\n...",
-                "template_id": 1
+                "isWebSearch": True
             }
         }
 
@@ -216,23 +227,29 @@ class StatusResponse(BaseModel):
 
     보고서 생성의 현재 진행 상태를 반환합니다.
 
+    Artifact 기반 상태 추적 (v2.5+ Option A):
+    - 작업 시작 시: status="scheduled", file_path=NULL, progress=0
+    - 작업 중: status="generating", file_path=NULL, progress=0-99
+    - 완료 시: status="completed", file_path="s3://...", progress=100
+    - 실패 시: status="failed", error_message="...", progress=0-99
+
     Attributes:
         topic_id: 토픽 ID
-        status: 생성 상태 ("generating", "completed", "failed")
+        artifact_id: 생성된 artifact ID
+        status: 생성 상태 ("scheduled", "generating", "completed", "failed")
         progress_percent: 진행률 (0-100)
         current_step: 현재 진행 단계 (generating 중일 때만)
         started_at: 생성 시작 시간
-        estimated_completion: 예상 완료 시간
-        artifact_id: 생성된 artifact ID (completed일 때만)
         completed_at: 완료 시간 (completed일 때만)
+        file_path: 파일 경로 (completed일 때만, 작업 중에는 NULL)
         error_message: 에러 메시지 (failed일 때만)
     """
     topic_id: int
+    artifact_id: int
     status: str
     progress_percent: int
     current_step: Optional[str] = None
     started_at: Optional[str] = None
-    estimated_completion: Optional[str] = None
-    artifact_id: Optional[int] = None
     completed_at: Optional[str] = None
+    file_path: Optional[str] = None  # NULL during work, populated at completion
     error_message: Optional[str] = None

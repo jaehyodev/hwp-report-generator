@@ -6,7 +6,9 @@
       "mcp__serena__get_symbols_overview",
       "Bash(python:*)",
       "WebSearch",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena*"
     ],
     "deny": [],
     "ask": []

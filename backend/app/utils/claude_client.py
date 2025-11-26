@@ -4,12 +4,12 @@ Claude API 클라이언트
 """
 import os
 import logging
-from typing import Dict
+from typing import Dict, Optional
 from anthropic import Anthropic
 
 # shared.constants를 import하면 자동으로 sys.path 설정됨
 from shared.constants import ClaudeConfig
-from app.utils.prompts import FINANCIAL_REPORT_SYSTEM_PROMPT
+from app.utils.prompts import get_default_report_prompt
 
 # 로깅 설정
 logging.basicConfig(
@@ -17,6 +17,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+MAX_PLAN_CHARS = 20000  # Claude 프롬프트 보호용 Plan 텍스트 최대 길이
 
 
 class ClaudeClient:
@@ -60,11 +61,20 @@ class ClaudeClient:
         logger.info(f"  - 빠른 모델: {self.fast_model}")
         logger.info(f"  - 추론 모델: {self.reasoning_model}")
 
-    def generate_report(self, topic: str) -> str:
+    def generate_report(
+        self,
+        topic: str,
+        user_prompt: str,
+        system_prompt: Optional[str] = None,
+        isWebSearch: bool = False
+    ) -> str:
         """주제를 받아 금융 업무보고서 내용을 Markdown 형식으로 생성합니다.
 
         Args:
             topic: 보고서 주제
+            plan_text: Sequential Planning에서 전달된 계획 (선택)
+            system_prompt: 사용자 지정 시스템 프롬프트 (선택)
+            isWebSearch: 웹 검색 도구 활성화 여부
 
         Returns:
             str: Markdown 형식의 보고서 텍스트
@@ -75,21 +85,34 @@ class ClaudeClient:
             >>> md_content.startswith("# ")
             True
         """
-        user_message = f"다음 주제로 금융 업무보고서를 작성해주세요:\n\n{topic}"
+        base_system_prompt = system_prompt or get_default_report_prompt()
+
 
         try:
             logger.info(f"Claude API 호출 시작 - 주제: {topic}")
             logger.info(f"사용 모델: {self.model}")
             logger.info(f"최대 토큰: {self.max_tokens}")
+            logger.info(f"웹 검색 사용: {isWebSearch}")
 
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                system=FINANCIAL_REPORT_SYSTEM_PROMPT,
-                messages=[
-                    {"role": "user", "content": user_message}
+            api_params = {
+                "model": self.model,
+                "max_tokens": self.max_tokens,
+                "system": base_system_prompt,
+                "messages": [
+                    {"role": "user", "content": user_prompt}
                 ]
-            )
+            }
+
+            if isWebSearch:
+                api_params["tools"] = [
+                    {
+                        "type": "web_search_20250305",
+                        "name": "web_search"
+                    }
+                ]
+                logger.info("웹 검색 도구 활성화됨 (generate_report)")
+
+            message = self.client.messages.create(**api_params)
 
             # 응답 텍스트 (Markdown)
             logger.info(f"Claude API 응답 객체 정보 (생성 모드):")
@@ -110,17 +133,22 @@ class ClaudeClient:
                     f"output_tokens={getattr(message.usage, 'output_tokens', 'N/A')}"
                 )
 
-            # text 타입의 content 추출 (tool_use 등 다른 타입 제외)
-            text_content = None
+            # text 타입 content_block 이 여러 개일 수 있으므로 모두 수집 후 합치기
+            text_blocks = []
             for content_block in message.content:
-                if hasattr(content_block, 'text'):
-                    text_content = content_block.text
-                    break
+                block_type = getattr(content_block, "type", None)
+                block_text = getattr(content_block, "text", None)
 
-            if not text_content:
-                raise ValueError(f"Claude API 응답에서 텍스트 컨텐츠를 찾을 수 없습니다. Content types: {[type(c).__name__ for c in message.content]}")
+                if block_text and (block_type == "text" or block_type is None):
+                    text_blocks.append(block_text)
 
-            content = text_content
+            if not text_blocks:
+                raise ValueError(
+                    "Claude API 응답에서 텍스트 컨텐츠를 찾을 수 없습니다. "
+                    f"Content types: {[getattr(c, 'type', type(c).__name__) for c in message.content]}"
+                )
+
+            content = "\n\n".join(text_blocks)
 
             logger.info("=" * 80)
             logger.info("Claude API 응답 내용 (Markdown):")
@@ -202,7 +230,7 @@ class ClaudeClient:
             if isWebSearch:
                 api_params["tools"] = [
                     {
-                        "type": "web_search_20250131"
+                        "type": "web_search_20250305", "name" :"web_search"
                     }
                 ]
                 logger.info("웹 검색 도구 활성화됨")
@@ -220,7 +248,7 @@ class ClaudeClient:
             try:
                 import json
                 response_dict = response.model_dump() if hasattr(response, 'model_dump') else response.dict()
-                logger.info(f"응답 JSON: {json.dumps(response_dict, default=str, indent=2)}")
+                logger.debug(f"응답 JSON: {json.dumps(response_dict, default=str, indent=2)}")
             except Exception as e:
                 logger.error(f"응답 JSON 변환 실패: {str(e)}")
                 logger.error(f"응답 객체 타입: {type(response)}")
@@ -228,11 +256,11 @@ class ClaudeClient:
 
             if response.content:
                 for i, content_block in enumerate(response.content):
-                    logger.info(f"  - content[{i}] 타입: {type(content_block).__name__}")
+                    logger.debug(f"  - content[{i}] 타입: {type(content_block).__name__}")
                     if hasattr(content_block, 'text'):
-                        logger.info(f"    - text 길이: {len(content_block.text)}")
+                        logger.debug(f"    - text 길이: {len(content_block.text)}")
                     if hasattr(content_block, 'type'):
-                        logger.info(f"    - type 속성: {content_block.type}")
+                        logger.debug(f"    - type 속성: {content_block.type}")
 
             if not response.content:
                 # content가 비어있을 때 상세 정보 로깅
@@ -253,17 +281,22 @@ class ClaudeClient:
                     f"output_tokens={getattr(response.usage, 'output_tokens', 'N/A')}"
                 )
 
-            # text 타입의 content 추출 (tool_use 등 다른 타입 제외)
-            text_content = None
+            # text 타입 content_block 이 여러 개일 수 있으므로 모두 수집 후 합치기
+            text_blocks = []
             for content_block in response.content:
-                if hasattr(content_block, 'text'):
-                    text_content = content_block.text
-                    break
+                block_type = getattr(content_block, "type", None)
+                block_text = getattr(content_block, "text", None)
 
-            if not text_content:
-                raise ValueError(f"Claude API 응답에서 텍스트 컨텐츠를 찾을 수 없습니다. Content types: {[type(c).__name__ for c in response.content]}")
+                if block_text and (block_type == "text" or block_type is None):
+                    text_blocks.append(block_text)
 
-            content = text_content
+            if not text_blocks:
+                raise ValueError(
+                    "Claude API 응답에서 텍스트 컨텐츠를 찾을 수 없습니다. "
+                    f"Content types: {[getattr(c, 'type', type(c).__name__) for c in response.content]}"
+                )
+
+            content = "\n\n".join(text_blocks)
 
             logger.info("=" * 80)
             logger.info("Claude API 응답 (채팅 모드):")
@@ -372,7 +405,12 @@ class ClaudeClient:
 
             # 웹 검색 활성화 시
             if isWebSearch:
-                api_params["tools"] = [{"type": "web_search_20250131"}]
+                api_params["tools"] = [
+                    {
+                        "type": "web_search_20250305",
+                        "name": "web_search"
+                    }
+                ]
                 logger.info("웹 검색 도구 활성화")
 
             # API call

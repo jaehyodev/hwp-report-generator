@@ -83,12 +83,12 @@ def check_imports():
     checks = [
         {
             "file": "app/utils/claude_client.py",
-            "import": "from app.utils.prompts import FINANCIAL_REPORT_SYSTEM_PROMPT",
+            "import": "from app.utils.prompts import get_default_report_prompt",
             "description": "claude_client.py의 prompts import"
         },
         {
             "file": "app/routers/topics.py",
-            "import": "from app.utils.prompts import FINANCIAL_REPORT_SYSTEM_PROMPT, create_topic_context_message",
+            "import": "from app.utils.prompts import",
             "description": "topics.py의 prompts import"
         },
         {
@@ -206,10 +206,10 @@ def check_prompts_module():
         content = f.read()
 
     checks = [
-        ("FINANCIAL_REPORT_SYSTEM_PROMPT", "상수 정의"),
-        ("create_topic_context_message", "함수 정의"),
-        ("당신은 금융 기관", "System prompt 내용"),
-        ("Markdown", "Markdown 형식 지침"),
+        ("def get_base_report_prompt", "BASE 프롬프트 getter"),
+        ("def get_default_report_prompt", "기본 프롬프트 조합"),
+        ("create_template_specific_rules", "규칙 생성 함수"),
+        ("create_topic_context_message", "Topic context 함수 정의"),
     ]
 
     all_found = True
@@ -242,9 +242,9 @@ def check_claude_client_changes():
         content = f.read()
 
     checks = [
-        ("from app.utils.prompts import FINANCIAL_REPORT_SYSTEM_PROMPT", "Import 추가"),
-        ("def generate_report(self, topic: str) -> str:", "generate_report 반환 타입 변경 (str)"),
-        ("system=FINANCIAL_REPORT_SYSTEM_PROMPT", "system prompt 사용"),
+        ("from app.utils.prompts import get_default_report_prompt", "Import 추가"),
+        ("def generate_report(self, topic: str,", "generate_report 시그니처"),
+        ('"system": get_default_report_prompt()', "system prompt 사용"),
     ]
 
     all_found = True
@@ -286,8 +286,8 @@ def check_topics_router_changes():
     checks = [
         ("from app.utils.prompts import", "prompts import"),
         ("create_topic_context_message", "create_topic_context_message import"),
+        ("get_system_prompt", "System prompt helper 사용"),
         ("parse_markdown_to_content", "markdown_parser import"),
-        ("system_prompt = FINANCIAL_REPORT_SYSTEM_PROMPT", "System prompt 사용"),
         ("topic_context_msg = create_topic_context_message", "Topic context message 생성"),
         ("claude_messages = [topic_context_msg] + claude_messages", "Topic context를 첫 메시지로 추가"),
     ]

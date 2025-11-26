@@ -4,7 +4,7 @@ System Prompt 통합 기능 테스트
 이 파일은 07.PromptIntegrate.md 계획에 따라 구현된 기능들을 테스트합니다.
 """
 import pytest
-from app.utils.prompts import FINANCIAL_REPORT_SYSTEM_PROMPT, create_topic_context_message
+from app.utils.prompts import get_default_report_prompt, create_topic_context_message
 from app.utils.markdown_parser import (
     parse_markdown_to_content,
     extract_all_h2_sections,
@@ -18,14 +18,15 @@ class TestPrompts:
 
     def test_system_prompt_exists(self):
         """FINANCIAL_REPORT_SYSTEM_PROMPT가 정의되어 있는지 확인"""
-        assert FINANCIAL_REPORT_SYSTEM_PROMPT is not None
-        assert len(FINANCIAL_REPORT_SYSTEM_PROMPT) > 0
-        assert "금융 기관" in FINANCIAL_REPORT_SYSTEM_PROMPT
-        assert "Markdown" in FINANCIAL_REPORT_SYSTEM_PROMPT
+        default_prompt = get_default_report_prompt()
+        assert default_prompt is not None
+        assert len(default_prompt) > 0
+        assert "금융 기관" in default_prompt
+        assert "Markdown" in default_prompt
 
     def test_system_prompt_structure(self):
         """System Prompt가 필요한 구조를 포함하는지 확인"""
-        prompt = FINANCIAL_REPORT_SYSTEM_PROMPT
+        prompt = get_default_report_prompt()
 
         # 4개 섹션이 모두 언급되어야 함
         assert "요약" in prompt
@@ -316,7 +317,7 @@ AI 기반 개인화 서비스를 확대하고, 블록체인 기술을 활용한 
 
     def test_system_prompt_purity(self):
         """System Prompt가 순수하게 지침만 포함하는지 확인"""
-        prompt = FINANCIAL_REPORT_SYSTEM_PROMPT
+        prompt = get_default_report_prompt()
 
         # Topic이나 구체적인 데이터가 포함되어서는 안 됨
         assert "디지털뱅킹" not in prompt

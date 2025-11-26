@@ -103,16 +103,18 @@ def init_db():
     """)
 
     # 아티팩트 테이블
+    # v2.5+: file_path는 NULL 가능 (작업 중에는 파일이 없을 수 있음)
+    # v2.5+: message_id는 NULL 가능 (백그라운드 생성 시 메시지 생성 이후에 추가됨)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS artifacts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             topic_id INTEGER NOT NULL,
-            message_id INTEGER NOT NULL,
+            message_id INTEGER,
             kind TEXT NOT NULL,
             locale TEXT NOT NULL DEFAULT 'ko',
             version INTEGER NOT NULL DEFAULT 1,
             filename TEXT NOT NULL,
-            file_path TEXT NOT NULL,
+            file_path TEXT,
             file_size INTEGER NOT NULL DEFAULT 0,
             sha256 TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -182,14 +184,61 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # 컬럼이 이미 존재하면 무시
 
+    # Topics 테이블 마이그레이션: template_id 컬럼 추가 (v2.4)
+    try:
+        cursor.execute("""
+            ALTER TABLE topics ADD COLUMN template_id INTEGER DEFAULT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass  # 컬럼이 이미 존재하면 무시
+
+    # Artifacts 테이블 마이그레이션: 상태 관리 컬럼 추가 (v2.5, Option A)
+    try:
+        cursor.execute("""
+            ALTER TABLE artifacts ADD COLUMN status TEXT DEFAULT 'completed'
+        """)
+    except sqlite3.OperationalError:
+        pass  # 컬럼이 이미 존재하면 무시
+
+    try:
+        cursor.execute("""
+            ALTER TABLE artifacts ADD COLUMN progress_percent INTEGER DEFAULT 100
+        """)
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("""
+            ALTER TABLE artifacts ADD COLUMN started_at TIMESTAMP DEFAULT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("""
+            ALTER TABLE artifacts ADD COLUMN completed_at TIMESTAMP DEFAULT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("""
+            ALTER TABLE artifacts ADD COLUMN error_message TEXT DEFAULT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass
+
     # 인덱스 생성
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_user_id ON reports(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_token_usage_user_id ON token_usage(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_topics_user_id ON topics(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_topics_template_id ON topics(template_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_messages_topic_id ON messages(topic_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_topic_id ON artifacts(topic_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_message_id ON artifacts(message_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_status ON artifacts(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_started_at ON artifacts(started_at)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_usage_topic_id ON ai_usage(topic_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_usage_message_id ON ai_usage(message_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_templates_user_id ON templates(user_id)")

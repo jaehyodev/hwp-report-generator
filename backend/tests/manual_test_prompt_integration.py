@@ -15,7 +15,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from app.utils.prompts import FINANCIAL_REPORT_SYSTEM_PROMPT, create_topic_context_message
+from app.utils.prompts import get_default_report_prompt, create_topic_context_message
 from app.utils.markdown_parser import parse_markdown_to_content
 
 
@@ -67,8 +67,9 @@ def test_2_messages_construction():
     print(f"  Role: {claude_messages[1]['role']}")
     print(f"  Content: {claude_messages[1]['content']}")
 
+    default_prompt = get_default_report_prompt()
     print(f"\nSystem Prompt (앞 100자):")
-    print(f"  {FINANCIAL_REPORT_SYSTEM_PROMPT[:100]}...")
+    print(f"  {default_prompt[:100]}...")
 
     # 검증
     assert len(claude_messages) == 4, "❌ 메시지 수가 4개가 아닙니다."
@@ -164,7 +165,7 @@ def test_5_system_prompt_purity():
     """테스트 5: System Prompt 순수성 검증"""
     print_section("TEST 5: System Prompt 순수성 검증")
 
-    prompt = FINANCIAL_REPORT_SYSTEM_PROMPT
+    prompt = get_default_report_prompt()
 
     print(f"\nSystem Prompt 길이: {len(prompt)} 문자")
     print(f"\nSystem Prompt 내용 (앞 200자):")

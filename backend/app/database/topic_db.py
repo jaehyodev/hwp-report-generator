@@ -36,11 +36,11 @@ class TopicDB:
         now = datetime.now()
         cursor.execute(
             """
-            INSERT INTO topics (user_id, input_prompt, language, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO topics (user_id, input_prompt, language, status, template_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (user_id, topic_data.input_prompt, topic_data.language,
-             TopicStatus.ACTIVE.value, now, now)
+             TopicStatus.ACTIVE.value, topic_data.template_id, now, now)
         )
 
         conn.commit()
@@ -208,6 +208,7 @@ class TopicDB:
             generated_title=row["generated_title"],
             language=row["language"],
             status=TopicStatus(row["status"]),
+            template_id=row["template_id"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"])
         )
