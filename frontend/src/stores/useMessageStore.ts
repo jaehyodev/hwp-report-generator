@@ -25,12 +25,21 @@ interface MessageStore {
     isDeletingMessage: boolean
     isLoadingMessages: boolean
 
+    generatingReportStatus?: {
+        topicId: number
+        status: 'pending' | 'generating' | 'completed' | 'failed'
+        progressPercent: number
+        artifactId?: number
+        errorMessage?: string
+    }
+
     // 메시지 데이터 Actions
     setMessages: (topicId: number, messages: MessageModel[]) => void
     addMessages: (topicId: number, messages: MessageModel[]) => void
     clearMessages: (topicId: number) => void
     getMessages: (topicId: number) => MessageModel[]
     getMessagesUI: (topicId: number) => MessageUI[]
+    setGeneratingReportStatus: (status?: MessageStore['generatingReportStatus']) => void
 
     // UI 상태 Actions
     setIsGeneratingMessage: (generating: boolean) => void
@@ -267,6 +276,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
                 console.error('Failed to merge messages:', error)
                 // 에러 시에도 기존 메시지 유지 (아무 작업 안 함)
             }
-        }
+        },
+
+        setGeneratingReportStatus: (status) => set({ generatingReportStatus: status }),
     }
 })

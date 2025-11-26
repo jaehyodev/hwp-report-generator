@@ -61,6 +61,7 @@ export const API_ENDPOINTS = {
     DELETE_TOPIC: (topicId: number) => `/api/topics/${topicId}`, // 토픽 삭제
     ASK_TOPIC: (topicId: number) => `/api/topics/${topicId}/ask`, // 메시지 체이닝 (대화 이어가기)
     TOPIC_PLAN: '/api/topics/plan', // 보고서 작성 계획 생성
+    GET_GENERATION_STATUS_STREAM: (topicId: number) => `/api/topics/${topicId}/status/stream`, // 보고서 생성 완료 알림
 
     // 보고서 관련 API
     GENERATE_REPORT: '/api/generate', // 보고서 생성

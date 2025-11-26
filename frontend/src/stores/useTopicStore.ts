@@ -319,7 +319,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             // 2. 사용자 메시지 상태에 추가
             addMessages(tempTopicId, [userMsgModel])
 
-            // 🆕 즉시 selectedTopicId 설정 (사용자 메시지가 바로 보이도록)
+            // 즉시 selectedTopicId 설정 (사용자 메시지가 바로 보이도록)
             set({selectedTopicId: tempTopicId})
 
             // AI 응답 대기 상태 설정 (GeneratingIndicator 표시)
@@ -406,7 +406,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
          */
         generateReportFromPlan: async () => {
             const state = get()
-            const {plan} = state
+            const { plan } = state
 
             if (!plan) {
                 antdMessage.error('계획 정보가 없습니다.')
@@ -444,99 +444,165 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                     })
 
                     // 폴링으로 상태 확인 (3초마다, 최대 30초)
-                    let attempts = 0
-                    const maxAttempts = 10
-                    const pollInterval = 3000
+                    // let attempts = 0
+                    // const maxAttempts = 10
+                    // const pollInterval = 3000
 
-                    const checkStatus = async () => {
-                        try {
-                            const status = await topicApi.getGenerationStatus(realTopicId)
+                    // const checkStatus = async () => {
+                    //     try {
+                    //         const status = await topicApi.getGenerationStatus(realTopicId)
 
-                            if (status.status === 'completed') {
-                                antdMessage.destroy('generating')
-                                antdMessage.success('보고서가 생성되었습니다.')
+                    //         if (status.status === 'completed') {
+                    //             antdMessage.destroy('generating')
+                    //             antdMessage.success('보고서가 생성되었습니다.')
 
-                                const messageStore = useMessageStore.getState()
+                    //             const messageStore = useMessageStore.getState()
 
-                                // 1. 기존 계획 모드 메시지 (topicId=0) 가져오기
-                                const planMessages = messageStore.getMessages(0)
+                    //             // 1. 기존 계획 모드 메시지 (topicId=0) 가져오기
+                    //             const planMessages = messageStore.getMessages(0)
 
-                                // 2. 서버에서 메시지 + Artifact 조회
-                                const messagesResponse = await messageApi.listMessages(realTopicId)
-                                const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
-                                const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
-                                const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
+                    //             // 2. 서버에서 메시지 + Artifact 조회
+                    //             const messagesResponse = await messageApi.listMessages(realTopicId)
+                    //             const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
+                    //             const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
+                    //             const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
 
-                                // 3. 계획 메시지의 topicId 업데이트 (0 → realTopicId)
-                                const updatedPlanMessages = planMessages.map((msg) => ({
-                                    ...msg,
-                                    topicId: realTopicId
-                                }))
+                    //             // 3. 계획 메시지의 topicId 업데이트 (0 → realTopicId)
+                    //             const updatedPlanMessages = planMessages.map((msg) => ({
+                    //                 ...msg,
+                    //                 topicId: realTopicId
+                    //             }))
 
-                                // 4. 중복 제거: ID 기반으로 중복 체크
-                                const planMessageIds = new Set(updatedPlanMessages.filter((m) => m.id).map((m) => m.id))
-                                const newServerMessages = serverMessages.filter((m: MessageModel) => {
-                                    if (!m.id) return true // ID 없으면 추가
-                                    return !planMessageIds.has(m.id) // 중복 체크
-                                })
+                    //             // 4. 중복 제거: ID 기반으로 중복 체크
+                    //             const planMessageIds = new Set(updatedPlanMessages.filter((m) => m.id).map((m) => m.id))
+                    //             const newServerMessages = serverMessages.filter((m: MessageModel) => {
+                    //                 if (!m.id) return true // ID 없으면 추가
+                    //                 return !planMessageIds.has(m.id) // 중복 체크
+                    //             })
 
-                                // 5. 계획 메시지 + 서버 메시지 병합
-                                const mergedMessages = [...updatedPlanMessages, ...newServerMessages]
-                                messageStore.setMessages(realTopicId, mergedMessages)
+                    //             // 5. 계획 메시지 + 서버 메시지 병합
+                    //             const mergedMessages = [...updatedPlanMessages, ...newServerMessages]
+                    //             messageStore.setMessages(realTopicId, mergedMessages)
 
-                                // 6. 계획 모드 메시지 정리 (topicId=0 삭제)
-                                messageStore.clearMessages(0)
+                    //             // 6. 계획 모드 메시지 정리 (topicId=0 삭제)
+                    //             messageStore.clearMessages(0)
 
-                                // 7. 생성된 토픽을 서버에서 조회하여 사이드바에 추가
-                                try {
-                                    const newTopic = await topicApi.getTopic(realTopicId)
-                                    // addTopic을 호출하여 sidebarTopics과 pageTopics에 모두 추가
-                                    get().addTopic(newTopic)
-                                } catch (error) {
-                                    console.error('Failed to fetch new topic for sidebar:', error)
-                                    // 사이드바 토픽 목록 전체 새로고침 (fallback)
-                                    get().loadSidebarTopics()
-                                }
+                    //             // 7. 생성된 토픽을 서버에서 조회하여 사이드바에 추가
+                    //             try {
+                    //                 const newTopic = await topicApi.getTopic(realTopicId)
+                    //                 // addTopic을 호출하여 sidebarTopics과 pageTopics에 모두 추가
+                    //                 get().addTopic(newTopic)
+                    //             } catch (error) {
+                    //                 console.error('Failed to fetch new topic for sidebar:', error)
+                    //                 // 사이드바 토픽 목록 전체 새로고침 (fallback)
+                    //                 get().loadSidebarTopics()
+                    //             }
 
-                                // 8. selectedTopicId 전환
-                                set({selectedTopicId: realTopicId})
+                    //             // 8. selectedTopicId 전환
+                    //             set({selectedTopicId: realTopicId})
 
-                                messageStore.setIsGeneratingMessage(false)
-                            } else if (status.status === 'failed') {
-                                antdMessage.destroy('generating')
-                                antdMessage.error(status.error_message || '보고서 생성에 실패했습니다.')
-                                messageStore.setIsGeneratingMessage(false)
-                            } else if (attempts < maxAttempts) {
-                                // 계속 진행 중
-                                attempts++
-                                setTimeout(checkStatus, pollInterval)
-                            } else {
-                                antdMessage.destroy('generating')
-                                antdMessage.warning('보고서 생성이 오래 걸립니다. 잠시 후 다시 확인해주세요.')
+                    //             messageStore.setIsGeneratingMessage(false)
+                    //         } else if (status.status === 'failed') {
+                    //             antdMessage.destroy('generating')
+                    //             antdMessage.error(status.error_message || '보고서 생성에 실패했습니다.')
+                    //             messageStore.setIsGeneratingMessage(false)
+                    //         } else if (attempts < maxAttempts) {
+                    //             // 계속 진행 중
+                    //             attempts++
+                    //             setTimeout(checkStatus, pollInterval)
+                    //         } else {
+                    //             antdMessage.destroy('generating')
+                    //             antdMessage.warning('보고서 생성이 오래 걸립니다. 잠시 후 다시 확인해주세요.')
 
-                                // 타임아웃이어도 토픽을 사이드바에 추가
-                                try {
-                                    const newTopic = await topicApi.getTopic(realTopicId)
-                                    get().addTopic(newTopic)
-                                } catch (error) {
-                                    console.error('Failed to fetch new topic for sidebar:', error)
-                                    get().loadSidebarTopics()
-                                }
+                    //             // 타임아웃이어도 토픽을 사이드바에 추가
+                    //             try {
+                    //                 const newTopic = await topicApi.getTopic(realTopicId)
+                    //                 get().addTopic(newTopic)
+                    //             } catch (error) {
+                    //                 console.error('Failed to fetch new topic for sidebar:', error)
+                    //                 get().loadSidebarTopics()
+                    //             }
 
-                                // 타임아웃이어도 topic으로 전환
-                                set({selectedTopicId: realTopicId})
-                                messageStore.setIsGeneratingMessage(false)
-                            }
-                        } catch (error) {
-                            console.error('상태 확인 실패:', error)
-                            antdMessage.destroy('generating')
-                            antdMessage.error('상태 확인에 실패했습니다.')
-                            messageStore.setIsGeneratingMessage(false)
-                        }
-                    }
+                    //             // 타임아웃이어도 topic으로 전환
+                    //             set({selectedTopicId: realTopicId})
+                    //             messageStore.setIsGeneratingMessage(false)
+                    //         }
+                    //     } catch (error) {
+                    //         console.error('상태 확인 실패:', error)
+                    //         antdMessage.destroy('generating')
+                    //         antdMessage.error('상태 확인에 실패했습니다.')
+                    //         messageStore.setIsGeneratingMessage(false)
+                    //     }
+                    // }
 
                     // 첫 상태 확인 시작
-                    setTimeout(checkStatus, pollInterval)
+                    // setTimeout(checkStatus, pollInterval)
+
+                    const unsubscribe = topicApi.getGenerationStatusStream( 
+                        realTopicId, 
+                        async (status) => { 
+                            // SSE 상태를 메시지 스토어에 반영
+                            messageStore.setGeneratingReportStatus({
+                                topicId: realTopicId,
+                                status: status.status,
+                                progressPercent: status.progress_percent ?? 0,
+                                artifactId: status.artifact_id,
+                                errorMessage: status.error_message
+                            });
+
+                            if (status.status === 'completed') { 
+                                antdMessage.destroy('generating') 
+                                antdMessage.success('보고서가 생성되었습니다.') 
+                                
+                                // 메시지 처리 
+                                const planMessages = messageStore.getMessages(0) 
+                                const messagesResponse = await messageApi.listMessages(realTopicId) 
+                                const messageModels = mapMessageResponsesToModels(messagesResponse.messages) 
+                                const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId) 
+                                const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts) 
+                                
+                                const updatedPlanMessages = planMessages.map((msg) => ({ 
+                                    ...msg, 
+                                    topicId: realTopicId 
+                                })) 
+                                const planMessageIds = new Set(updatedPlanMessages.filter((m) => m.id).map((m) => m.id)) 
+                                const newServerMessages = serverMessages.filter((m: MessageModel) => { 
+                                    if (!m.id) return true 
+                                    return !planMessageIds.has(m.id) 
+                                }) 
+                                const mergedMessages = [...updatedPlanMessages, ...newServerMessages] 
+                                messageStore.setMessages(realTopicId, mergedMessages) 
+                                messageStore.clearMessages(0) 
+                                
+                                try { 
+                                    const newTopic = await topicApi.getTopic(realTopicId) 
+                                    get().addTopic(newTopic) 
+                                } catch (error) { 
+                                    console.error('Failed to fetch new topic for sidebar:', error) 
+                                    get().loadSidebarTopics()
+                                } 
+
+                                set({ selectedTopicId: realTopicId })
+                                messageStore.setIsGeneratingMessage(false)
+                                
+                                // SSE 구독 종료 
+                                unsubscribe()
+                            } else if (status.status === 'failed') {
+                                antdMessage.destroy('generating')
+                                antdMessage.error('보고서 생성에 실패했습니다.')
+                                messageStore.setIsGeneratingMessage(false)
+                                messageStore.setGeneratingReportStatus(undefined)
+                                unsubscribe();
+                            } 
+                        }, (error) => { 
+                            console.error('SSE error:', error) 
+                            antdMessage.destroy('generating') 
+                            antdMessage.error('보고서 상태 확인 중 오류가 발생했습니다.') 
+                            messageStore.setIsGeneratingMessage(false)
+                            messageStore.setGeneratingReportStatus(undefined)
+                            unsubscribe();
+                        } 
+                    )
                 }
             } catch (error: any) {
                 console.error('보고서 생성 실패:', error)

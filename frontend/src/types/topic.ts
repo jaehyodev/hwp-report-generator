@@ -96,3 +96,15 @@ export interface PlanResponse {
     plan: string
     sections: Section[]
 }
+
+// TopicGenerationStatus
+export interface TopicGenerationStatus {
+    topic_id: number
+    status: 'generating' | 'completed' | 'failed'
+    progress_percent: number
+    current_step?: string
+    artifact_id?: number
+    started_at?: string
+    completed_at?: string
+    error_message?: string
+}

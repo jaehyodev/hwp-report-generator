@@ -4,6 +4,7 @@ import {useAuth} from '../../hooks/useAuth'
 import DeleteChatMessageModal from './DeleteChatMessageModal'
 import type {MessageUI} from '../../models/ui/MessageUI'
 import styles from './ChatMessage.module.css'
+import { Progress } from 'antd'
 
 interface ChatMessageProps {
     message: MessageUI
@@ -11,10 +12,12 @@ interface ChatMessageProps {
     onDownload: (reportData: {filename: string; content: string; messageId: number; reportId: number}) => void
     onDelete?: (messageId: number) => void
     isGenerating?: boolean
+    generatingReportStatus?: 'pending' | 'in_progress' | 'completed' | 'failed'
+    generatingReportProgressPercent?: number
     isDeleting?: boolean
 }
 
-const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating = false, isDeleting = false}: ChatMessageProps) => {
+const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating = false, generatingReportStatus, generatingReportProgressPercent, isDeleting = false}: ChatMessageProps) => {
     const {user} = useAuth()
     const [isHovered, setIsHovered] = useState(false)
     const [showDeleteModal, setShowDeleteModal] = useState(false)
@@ -75,6 +78,23 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
                             <button className={styles.deleteBtn} onClick={handleDeleteClick} disabled={isDeleting} title="메시지 삭제">
                                 <DeleteOutlined />
                             </button>
+                        )}
+
+                        {/* 보고서 생성 상태 표시 */}
+                        {isGenerating && generatingReportStatus && (
+                            <div>
+                                {generatingReportStatus === 'pending' && '보고서 요청 중...'}
+                                {generatingReportStatus === 'in_progress' && (
+                                    <>
+                                        보고서 생성 중... {generatingReportProgressPercent != null ? `${generatingReportProgressPercent}%` : ''}
+                                        {isGenerating && generatingReportStatus === 'in_progress' && generatingReportProgressPercent != null && (
+                                            <Progress percent={generatingReportProgressPercent} size="small" />
+                                        )}
+                                    </>
+                                )}
+                                {generatingReportStatus === 'completed' && '보고서 생성 완료!'}
+                                {generatingReportStatus === 'failed' && '보고서 생성 실패'}
+                            </div>
                         )}
                         <p>
                             {message.reportData

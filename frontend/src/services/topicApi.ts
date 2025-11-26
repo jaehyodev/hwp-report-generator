@@ -1,7 +1,9 @@
 import api from './api'
 import {API_ENDPOINTS} from '../constants/'
-import type {TopicCreate, TopicUpdate, Topic, TopicListResponse, AskRequest, AskResponse, PlanRequest, PlanResponse} from '../types/topic'
+import type {TopicCreate, TopicUpdate, Topic, TopicListResponse, AskRequest, AskResponse, PlanRequest, PlanResponse, TopicGenerationStatus} from '../types/topic'
 import type {ApiResponse} from '../types/api'
+import { storage } from '@/utils/storage'
+import { fetchEventSource } from '@microsoft/fetch-event-source'
 
 /**
  * topicApi.ts
@@ -260,5 +262,50 @@ export const topicApi = {
         }
 
         return response.data.data
+    },
+
+    getGenerationStatusStream: (
+        topicId: number,
+        onMessage: (status: TopicGenerationStatus) => void,
+        onError?: (error: any) => void
+    ) => {
+        // 토큰 추출
+        const token = storage.getToken()
+        let controller = new AbortController()
+
+        // EventSource 생성 
+        fetchEventSource(`http://localhost:8000/api/topics/${topicId}/status/stream`, {
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
+            onmessage: (event) => {
+                try {
+                    const data = JSON.parse(event.data)
+                    console.log('topicApi >> sse >> ', data)
+                    // event 타입에 따라 처리 
+                    if (data.event === 'status_update' || data.event === 'completion') {
+                        onMessage({
+                            topic_id: topicId,
+                            status: data.status,
+                            progress_percent: data.progress_percent ?? 0,
+                            artifact_id: data.artifact_id,
+                            error_message: data.error_message
+                        })
+                    }
+                } catch (error) {
+                    console.error('SSE parsing error:', error)
+                }
+            },
+            onerror: (error) => {
+                console.error('SSE connection error:', error)
+                if (onError) onError(error)
+            },
+        })
+        
+        // 반환: 구독 취소용
+        return () => {
+            controller.abort()
+        }
     }
 }
