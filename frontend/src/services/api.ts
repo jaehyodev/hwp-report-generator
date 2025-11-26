@@ -104,14 +104,21 @@ api.interceptors.request.use(
 api.interceptors.response.use(
     (response) => response, // 정상 응답은 그대로 통과
     (error) => {
+        const status = error.response?.status
+        const url = error.config?.url
+
+        const isLoginAPI = url?.includes('/api/auth/login')
+        const isRegisterAPI = url?.includes('/api/auth/register')
+
         // 401 에러 = 인증 실패 (토큰 없음/만료/잘못됨)
-        if (error.response?.status === 401) {
-            storage.clear() // 토큰, 사용자 정보 삭제
-            window.location.href = '/login' // 로그인 페이지로 강제 이동
+        // 회원가입 및 로그인을 제외한 인증 실패는 로그인 화면으로 이동
+        if (status === 401 && !isRegisterAPI && !isLoginAPI) {
+            storage.clear()
+            window.location.href = '/login'
+            return
         }
         return Promise.reject(error)
     }
 )
 
-// 다른 파일에서 사용할 수 있도록 내보내기
 export default api

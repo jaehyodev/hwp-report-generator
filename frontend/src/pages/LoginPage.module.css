@@ -25,9 +25,23 @@
     margin: 0;
 }
 
+.errorMessage {
+    height: 24px;
+    margin-bottom: var(--spacing-md);
+    color: var(--error-color);
+}
+
 .footer {
     text-align: center;
 }
+
+.footer > a {
+    color: var(--primary-color);
+}
+.footer > a:hover {
+    color: var(--primary-hover);
+}
+
 
 /* Mobile (<768px) */
 @media (max-width: 767px) {

@@ -20,7 +20,7 @@ export const authApi = {
      */
     login: async (data: LoginRequest): Promise<LoginResponse> => {
         const response = await api.post<ApiResponse<LoginResponse>>(API_ENDPOINTS.LOGIN, data)
-
+        
         if (!response.data.success || !response.data.data) {
             throw new Error(response.data.error?.message || '로그인에 실패했습니다.')
         }
