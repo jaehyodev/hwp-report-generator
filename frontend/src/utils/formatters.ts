@@ -46,3 +46,53 @@ export const formatDate = (timestamp: number): string => {
         minute: '2-digit'
     })
 }
+
+/**
+ * ISO 8601 문자열을 Date 객체로 변환합니다.
+ * @param isoString 백엔드에서 받은 날짜/시간 문자열 (ISO 8601)
+ * @returns 유효한 Date 객체 또는 null
+ */
+export const isoStringToDate = (isoString: string | null): Date | null => {
+    if (!isoString) {
+        return null;
+    }
+    // JavaScript의 Date 생성자는 ISO 8601 문자열을 자동으로 파싱합니다.
+    const date = new Date(isoString);
+    
+    // Date 객체가 유효한지 확인합니다.
+    if (isNaN(date.getTime())) {
+        console.error("isoStringToDate >> invalid isoString >> ", isoString);
+        return null;
+    }
+    
+    return date;
+};
+
+/**
+ * Date 객체를 한국 표준시(KST) 기반의 문자열로 포맷합니다.
+ * @param date 포맷할 Date 객체
+ * @returns 'YYYY. MM. DD. HH:MM' 형식의 문자열
+ */
+export const formatDateToString = (date: Date | null): string => {
+    // 1. 날짜가 없는 경우
+    if (date === null) {
+        return '-';
+    }
+
+    // 2. Date 객체이지만 유효하지 않은 경우 (NaN)
+    if (isNaN(date.getTime())) {
+        // 비정상적인 데이터이므로 오류를 기록합니다.
+        console.error("formatDateToString >> invalid date >> ", date);
+        return 'N/A';
+    }
+
+    // 3. toLocaleString 메서드를 사용하여 포맷팅합니다.
+    return date.toLocaleString('ko-KR', {
+        year: 'numeric',
+        month: '2-digit', // 월을 01, 02 형식으로 표시
+        day: '2-digit',   // 일을 01, 02 형식으로 표시
+        hour: '2-digit',  // 시간을 01, 02 형식으로 표시
+        minute: '2-digit',// 분을 01, 02 형식으로 표시
+        hour12: true      // 24시간제 미사용 (오전/오후 표시)
+    });
+};

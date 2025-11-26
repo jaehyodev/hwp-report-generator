@@ -1,0 +1,38 @@
+/* src/components/admin/AdminDashboard.module.css */
+
+.dashboardContainer {
+    padding: 16px;
+    background-color: #f0f2f5; /* 전체 배경색 설정 */
+}
+
+.dashboardCard {
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+}
+
+.sectionTitle {
+    margin-top: 0;
+    margin-bottom: 24px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 1.25rem; /* 20px */
+    font-weight: 600;
+    color: #333;
+}
+
+.statsGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 24px;
+    margin-bottom: 32px;
+}
+
+.divider {
+    border: none;
+    border-top: 1px solid #f0f0f0;
+    margin: 32px 0;
+}
+
+/* 사용자별 사용량 테이블 스타일 */
+.usageTable {
+    margin-top: 16px;
+}

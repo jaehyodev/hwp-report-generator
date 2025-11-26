@@ -2,7 +2,7 @@ import api from './api'
 import {API_ENDPOINTS} from '../constants/'
 import type {UserData} from '../types/user'
 import type {ApiResponse} from '../types/api'
-import type { TokenUsage } from '@/models/TokenUsageModel'
+import type { TokenUsageModel } from '@/models/TokenUsageModel'
 
 interface MessageResponse {
     message: string
@@ -18,8 +18,20 @@ interface UsersListResponse {
     total: number
 }
 
+export interface AllTokenUsageResponse {
+    stats: TokenUsageResponse[]
+}
+export interface UserTokenUsageResponse extends TokenUsageResponse {
+}
 interface TokenUsageResponse {
-    stats: TokenUsage[]
+    user_id: number
+    username: string
+    email: string
+    total_input_tokens: number
+    total_output_tokens: number
+    total_tokens: number
+    report_count: number
+    last_usage: string
 }
 
 export const adminApi = {
@@ -63,8 +75,8 @@ export const adminApi = {
         return response.data.data
     },
 
-    getAllTokenUsage: async (): Promise<TokenUsageResponse> => {
-        const response = await api.get<ApiResponse<TokenUsageResponse>>(API_ENDPOINTS.GET_ALL_TOKEN_USAGE)
+    getAllTokenUsage: async (): Promise<AllTokenUsageResponse> => {
+        const response = await api.get<ApiResponse<AllTokenUsageResponse>>(API_ENDPOINTS.GET_ALL_TOKEN_USAGE)
 
         if (!response.data.success || !response.data.data) {
             throw new Error(response.data.error?.message || '모든 사용자의 토큰 사용량 조회에 실패했습니다.')
@@ -73,8 +85,8 @@ export const adminApi = {
         return response.data.data
     },
 
-    getUserTokenUsage: async (userId: number): Promise<TokenUsageResponse> => {
-        const response = await api.get<ApiResponse<TokenUsageResponse>>(API_ENDPOINTS.GET_USER_TOKEN_USAGE(userId))
+    getUserTokenUsage: async (userId: number): Promise<UserTokenUsageResponse> => {
+        const response = await api.get<ApiResponse<UserTokenUsageResponse>>(API_ENDPOINTS.GET_USER_TOKEN_USAGE(userId))
 
         if (!response.data.success || !response.data.data) {
             throw new Error(response.data.error?.message || '해당 사용자의 토큰 사용량 조회에 실패했습니다.')

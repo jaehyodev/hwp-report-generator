@@ -1,9 +1,12 @@
 /**
- * UI 표시용 전체 토큰 사용량
+ * UI 표시용 토큰 사용량
  */
-export interface AllTokenUsage {
-  total_input_tokens: number
-  total_output_tokens: number
-  total_tokens: number
-  report_count: number
+export interface TokenUsageUI {
+  userId: number
+  username: string
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalTokens: number
+  reportCount: number
+  lastUsage: string
 }
