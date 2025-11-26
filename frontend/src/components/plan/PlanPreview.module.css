@@ -4,7 +4,7 @@
     right: 0;
     width: 28rem;
     height: 100vh;
-    background-color: var(--white);
+    background-color: var(--color-white);
     border-left: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
@@ -95,8 +95,7 @@
     width: 100%;
     padding: var(--spacing-lg);
     border: none;
-    background-color: #fafafa;
-    font-family: 'Courier New', monospace;
+    background-color: var(--color-background);
     font-size: var(--font-size-sm);
     line-height: 1.8;
     color: var(--text-primary);
@@ -105,7 +104,7 @@
 }
 
 .editableTextarea:focus {
-    background-color: var(--white);
+    background-color: var(--color-white);
 }
 
 .editableTextarea::placeholder {
