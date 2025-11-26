@@ -5,12 +5,13 @@ Handles CRUD operations for topics (conversation threads).
 """
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from typing import Optional
+from typing import Optional, Dict, Any
 import asyncio
 import json
 import time
 import logging
 from datetime import datetime
+from pydantic import BaseModel, Field
 
 from app.models.user import User
 from app.models.topic import (
@@ -22,10 +23,12 @@ from app.models.topic import (
 from app.models.message import MessageCreate, MessageResponse, AskRequest
 from app.models.artifact import ArtifactCreate, ArtifactResponse
 from app.models.ai_usage import AiUsageCreate
+from app.models.prompt_optimization import PromptOptimizationCreate, PromptOptimizationResponse
 from app.database.topic_db import TopicDB
 from app.database.message_db import MessageDB
 from app.database.artifact_db import ArtifactDB
 from app.database.ai_usage_db import AiUsageDB
+from app.database.prompt_optimization_db import PromptOptimizationDB
 from app.utils.auth import get_current_active_user
 from app.utils.response_helper import success_response, error_response, ErrorCode
 from shared.types.enums import TopicStatus, MessageRole, ArtifactKind
@@ -45,10 +48,19 @@ from app.database.template_db import TemplateDB
 # Sequential Planning 관련 모듈
 from app.utils.sequential_planning import sequential_planning, SequentialPlanningError, TimeoutError as SequentialPlanningTimeout
 from fastapi.responses import StreamingResponse
+from app.utils.prompt_optimizer import optimize_prompt_with_claude, map_optimized_to_claude_payload
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/topics", tags=["Topics"])
+
+PROMPT_OPTIMIZATION_DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+
+
+class PromptOptimizationRequest(BaseModel):
+    """프롬프트 고도화 입력 모델."""
+
+    user_prompt: str = Field(..., min_length=10, max_length=5000, description="고도화할 사용자 프롬프트")
 
 
 @router.post("", summary="Create a new topic")
@@ -771,6 +783,8 @@ async def ask(
     topic_context_msg = create_topic_context_message(topic.input_prompt)
     claude_messages = [topic_context_msg] + claude_messages
 
+    user_message_content = user_msg.content
+
     logger.info(f"[ASK] Added topic context as first message - topic={topic.input_prompt}")
     logger.info(f"[ASK] Topic context message: {topic_context_msg}")
 
@@ -795,32 +809,71 @@ async def ask(
             hint="max_messages를 줄이거나 include_artifact_content를 false로 설정해주세요."
         )
 
-    # === 5단계: System Prompt 선택 (우선순위: template > default) ===
-    logger.info(f"[ASK] Selecting system prompt - template_id={topic.template_id}")
+    # === 4.5단계: 프롬프트 고도화 결과 확인 및 적용 ===
+    optimized_system_prompt: Optional[str] = None
 
     try:
-        system_prompt = await asyncio.to_thread(
-            get_system_prompt,
-            custom_prompt=None,
-            template_id=topic.template_id,
-            user_id=current_user.id
+        logger.info(f"[ASK] Checking prompt optimization result - topic_id={topic_id}")
+        optimization_record = await asyncio.to_thread(
+            PromptOptimizationDB.get_latest_by_topic,
+            topic_id
         )
-    except InvalidTemplateError as e:
-        logger.warning(f"[ASK] Template error - code={e.code}, message={e.message}")
-        return error_response(
-            code=e.code,
-            http_status=e.http_status,
-            message=e.message,
-            hint=e.hint
+
+        if optimization_record:
+            optimization_response = _build_prompt_optimization_response(optimization_record)
+            if optimization_response:
+                optimization_payload = map_optimized_to_claude_payload(
+                    optimization_response,
+                    user_message_content,
+                    PROMPT_OPTIMIZATION_DEFAULT_MODEL
+                )
+
+                optimized_system_prompt = optimization_payload.get("system")
+                optimized_messages = optimization_payload.get("messages") or []
+                if optimized_messages:
+                    optimized_first_message = optimized_messages[0]
+                    if claude_messages:
+                        claude_messages[0] = optimized_first_message
+                    else:
+                        claude_messages = [optimized_first_message]
+
+                logger.info("[ASK] Optimization result found - using optimized prompts")
+    except Exception as optimization_error:
+        logger.warning(
+            f"[ASK] Failed to apply optimization result - error={optimization_error}",
+            exc_info=True
         )
-    except ValueError as e:
-        logger.error(f"[ASK] Invalid arguments - error={str(e)}")
-        return error_response(
-            code=ErrorCode.SERVER_INTERNAL_ERROR,
-            http_status=500,
-            message="시스템 오류가 발생했습니다.",
-            details={"error": str(e)}
-        )
+
+    # === 5단계: System Prompt 선택 (우선순위: template > default) ===
+    if optimized_system_prompt is not None:
+        system_prompt = optimized_system_prompt
+    else:
+        logger.info("[ASK] No optimization result - using default system prompt")
+        logger.info(f"[ASK] Selecting system prompt - template_id={topic.template_id}")
+
+        try:
+            system_prompt = await asyncio.to_thread(
+                get_system_prompt,
+                custom_prompt=None,
+                template_id=topic.template_id,
+                user_id=current_user.id
+            )
+        except InvalidTemplateError as e:
+            logger.warning(f"[ASK] Template error - code={e.code}, message={e.message}")
+            return error_response(
+                code=e.code,
+                http_status=e.http_status,
+                message=e.message,
+                hint=e.hint
+            )
+        except ValueError as e:
+            logger.error(f"[ASK] Invalid arguments - error={str(e)}")
+            return error_response(
+                code=ErrorCode.SERVER_INTERNAL_ERROR,
+                http_status=500,
+                message="시스템 오류가 발생했습니다.",
+                details={"error": str(e)}
+            )
 
     # === 6단계: Claude 호출 ===
     logger.info(f"[ASK] Calling Claude API - messages={len(claude_messages)}")
@@ -1030,10 +1083,12 @@ async def plan_report(
             is_template_used=request.is_template_used
         )
 
-        # 새로운 topic 생성 또는 기존 topic 조회
+        # 새로운 topic 생성 (prompt_user, prompt_system 포함)
         topic_data = TopicCreate(
             input_prompt=request.topic,
-            template_id=request.template_id
+            template_id=request.template_id,
+            prompt_user=plan_result.get("prompt_user"),
+            prompt_system=plan_result.get("prompt_system")
         )
         topic = TopicDB.create_topic(current_user.id, topic_data)
 
@@ -1047,7 +1102,6 @@ async def plan_report(
             )
         )
 
-    #TODO: 해당 오류 상황 발생시 다음과 같은 오류 발생 (AttributeError: type object 'ErrorCode' has no attribute 'REQUEST_TIMEOUT')
     except SequentialPlanningTimeout as e:
         logger.error(f"[PLAN] Timeout exceeded - error={str(e)}")
         return error_response(
@@ -1397,6 +1451,305 @@ async def stream_generation_status(
     )
 
 
+@router.post("/{topic_id}/optimize-prompt", summary="Optimize prompt for topic")
+async def optimize_topic_prompt(
+    topic_id: int,
+    payload: PromptOptimizationRequest,
+    current_user: User = Depends(get_current_active_user)
+):
+    """POST /api/topics/{topic_id}/optimize-prompt 프롬프트 고도화.
+
+    Args:
+        topic_id (int): 경로 파라미터에 포함된 토픽 ID.
+        payload (PromptOptimizationRequest): 사용자가 입력한 원본 프롬프트.
+        current_user (User): 인증된 사용자 정보.
+
+    Returns:
+        Dict[str, Any]: PromptOptimizationResponse를 담은 성공 응답.
+
+    에러 코드:
+        - TOPIC.NOT_FOUND (404): 토픽이 존재하지 않을 때.
+        - TOPIC.UNAUTHORIZED (403): 토픽 소유자가 아닐 때.
+        - PROMPT_OPTIMIZATION.TIMEOUT (504): Claude 호출이 타임아웃일 때.
+        - PROMPT_OPTIMIZATION.ERROR (500): Claude 응답 처리 또는 DB 저장 실패.
+    """
+
+    normalized_prompt = payload.user_prompt.strip()
+    masked_prompt = _mask_prompt_fragment(normalized_prompt)
+    logger.info(
+        "[PROMPT_OPTIMIZATION] Request received - topic_id=%s, user_id=%s, prompt=%s",
+        topic_id,
+        current_user.id,
+        masked_prompt
+    )
+
+    # 토픽 유효성 확인
+    topic = TopicDB.get_topic_by_id(topic_id)
+    if not topic:
+        logger.warning(
+            "[PROMPT_OPTIMIZATION] Topic not found - topic_id=%s, user_id=%s",
+            topic_id,
+            current_user.id
+        )
+        return error_response(
+            code=ErrorCode.TOPIC_NOT_FOUND,
+            http_status=404,
+            message="토픽을 찾을 수 없습니다."
+        )
+
+    # 토픽 소유자 권한 확인 (관리자 예외 없이 소유자만 허용)
+    if topic.user_id != current_user.id:
+        logger.warning(
+            "[PROMPT_OPTIMIZATION] Unauthorized - topic_id=%s, owner=%s, requester=%s",
+            topic_id,
+            topic.user_id,
+            current_user.id
+        )
+        return error_response(
+            code=ErrorCode.TOPIC_UNAUTHORIZED,
+            http_status=403,
+            message="이 토픽에 접근할 권한이 없습니다."
+        )
+
+    try:
+        # Claude 프롬프트 고도화 호출
+        optimization_result = await optimize_prompt_with_claude(
+            user_prompt=normalized_prompt,
+            topic_id=topic_id,
+            model=PROMPT_OPTIMIZATION_DEFAULT_MODEL
+        )
+
+        # Claude 응답을 PromptOptimizationCreate 모델로 래핑
+        optimization_payload = PromptOptimizationCreate(
+            user_prompt=normalized_prompt,
+            hidden_intent=optimization_result.get("hidden_intent"),
+            emotional_needs=optimization_result.get("emotional_needs"),
+            underlying_purpose=optimization_result.get("underlying_purpose"),
+            role=optimization_result.get("role"),
+            context=optimization_result.get("context"),
+            task=optimization_result.get("task"),
+            model_name=PROMPT_OPTIMIZATION_DEFAULT_MODEL,
+            latency_ms=optimization_result.get("latency_ms", 0)
+        )
+
+        # 고도화 결과를 DB에 저장
+        record_id = PromptOptimizationDB.create(
+            topic_id=topic_id,
+            user_id=current_user.id,
+            user_prompt=optimization_payload.user_prompt,
+            hidden_intent=optimization_payload.hidden_intent,
+            emotional_needs=optimization_payload.emotional_needs,
+            underlying_purpose=optimization_payload.underlying_purpose,
+            role=optimization_payload.role,
+            context=optimization_payload.context,
+            task=optimization_payload.task,
+            model_name=optimization_payload.model_name,
+            latency_ms=optimization_payload.latency_ms,
+        )
+
+        logger.info(
+            "[PROMPT_OPTIMIZATION] Result stored - topic_id=%s, record_id=%s, latency_ms=%s",
+            topic_id,
+            record_id,
+            optimization_payload.latency_ms
+        )
+
+        # 저장된 결과를 응답 모델로 변환
+        created_record = PromptOptimizationDB.get_by_id(record_id)
+        response_payload = _build_prompt_optimization_response(created_record)
+        if response_payload is None:
+            logger.error(
+                "[PROMPT_OPTIMIZATION] Stored record missing - topic_id=%s, record_id=%s",
+                topic_id,
+                record_id
+            )
+            return error_response(
+                code=ErrorCode.PROMPT_OPTIMIZATION_ERROR,
+                http_status=500,
+                message="프롬프트 고도화 결과 조회에 실패했습니다.",
+                details={"recordId": record_id}
+            )
+
+        return success_response(response_payload)
+
+    except TimeoutError:
+        logger.error(
+            "[PROMPT_OPTIMIZATION] Claude timeout - topic_id=%s, user_id=%s",
+            topic_id,
+            current_user.id,
+            exc_info=True
+        )
+        return error_response(
+            code=ErrorCode.PROMPT_OPTIMIZATION_TIMEOUT,
+            http_status=504,
+            message="Claude 프롬프트 고도화가 제한 시간을 초과했습니다.",
+            details={"topicId": topic_id}
+        )
+
+    except ValueError as exc:
+        logger.error(
+            "[PROMPT_OPTIMIZATION] Invalid response - topic_id=%s, user_id=%s, error=%s",
+            topic_id,
+            current_user.id,
+            str(exc),
+            exc_info=True
+        )
+        return error_response(
+            code=ErrorCode.PROMPT_OPTIMIZATION_ERROR,
+            http_status=500,
+            message="Claude 프롬프트 고도화 응답 처리 중 오류가 발생했습니다.",
+            details={"error": str(exc)}
+        )
+
+    except Exception as exc:
+        logger.error(
+            "[PROMPT_OPTIMIZATION] Unexpected error - topic_id=%s, user_id=%s, error=%s",
+            topic_id,
+            current_user.id,
+            str(exc),
+            exc_info=True
+        )
+        return error_response(
+            code=ErrorCode.PROMPT_OPTIMIZATION_ERROR,
+            http_status=500,
+            message="프롬프트 고도화 요청 처리 중 오류가 발생했습니다.",
+            details={"error": str(exc)}
+        )
+
+    finally:
+        logger.info(
+            "[PROMPT_OPTIMIZATION] Request finished - topic_id=%s, user_id=%s",
+            topic_id,
+            current_user.id
+        )
+
+
+@router.get("/{topic_id}/optimization-result", summary="Get prompt optimization result")
+async def get_prompt_optimization_result(
+    topic_id: int,
+    current_user: User = Depends(get_current_active_user)
+):
+    """GET /api/topics/{topic_id}/optimization-result 최신 고도화 결과.
+
+    Args:
+        topic_id (int): 경로 파라미터 토픽 ID.
+        current_user (User): 인증된 사용자.
+
+    Returns:
+        Dict[str, Any]: PromptOptimizationResponse 또는 data=None 포함 성공 응답.
+
+    에러 코드:
+        - TOPIC.NOT_FOUND (404): 토픽이 존재하지 않을 때.
+        - TOPIC.UNAUTHORIZED (403): 토픽 소유자가 아닐 때.
+    """
+
+    logger.info(
+        "[PROMPT_OPTIMIZATION] Result fetch requested - topic_id=%s, user_id=%s",
+        topic_id,
+        current_user.id
+    )
+
+    # 토픽 확인
+    topic = TopicDB.get_topic_by_id(topic_id)
+    if not topic:
+        logger.warning(
+            "[PROMPT_OPTIMIZATION] Topic not found on fetch - topic_id=%s, user_id=%s",
+            topic_id,
+            current_user.id
+        )
+        return error_response(
+            code=ErrorCode.TOPIC_NOT_FOUND,
+            http_status=404,
+            message="토픽을 찾을 수 없습니다."
+        )
+
+    # 권한 확인
+    if topic.user_id != current_user.id:
+        logger.warning(
+            "[PROMPT_OPTIMIZATION] Unauthorized fetch - topic_id=%s, owner=%s, requester=%s",
+            topic_id,
+            topic.user_id,
+            current_user.id
+        )
+        return error_response(
+            code=ErrorCode.TOPIC_UNAUTHORIZED,
+            http_status=403,
+            message="이 토픽에 접근할 권한이 없습니다."
+        )
+
+    try:
+        # 최신 고도화 결과 조회
+        record = PromptOptimizationDB.get_latest_by_topic(topic_id)
+        if not record:
+            logger.info(
+                "[PROMPT_OPTIMIZATION] No result yet - topic_id=%s, user_id=%s",
+                topic_id,
+                current_user.id
+            )
+            return success_response(data=None)
+
+        response_payload = _build_prompt_optimization_response(record)
+        return success_response(response_payload)
+
+    except Exception as exc:
+        logger.error(
+            "[PROMPT_OPTIMIZATION] Fetch failed - topic_id=%s, user_id=%s, error=%s",
+            topic_id,
+            current_user.id,
+            str(exc),
+            exc_info=True
+        )
+        return error_response(
+            code=ErrorCode.SERVER_INTERNAL_ERROR,
+            http_status=500,
+            message="프롬프트 고도화 결과 조회 중 오류가 발생했습니다.",
+            details={"error": str(exc)}
+        )
+
+    finally:
+        logger.info(
+            "[PROMPT_OPTIMIZATION] Result fetch finished - topic_id=%s, user_id=%s",
+            topic_id,
+            current_user.id
+        )
+
+
+def _build_prompt_optimization_response(record: Optional[Dict[str, Any]]) -> Optional[PromptOptimizationResponse]:
+    """DB 행을 PromptOptimizationResponse로 변환한다."""
+
+    if record is None:
+        return None
+
+    prepared: Dict[str, Any] = dict(record)
+    emotional_needs = prepared.get("emotional_needs")
+
+    # 감정적 니즈 JSON 문자열 역직렬화
+    if isinstance(emotional_needs, str) and emotional_needs:
+        try:
+            prepared["emotional_needs"] = json.loads(emotional_needs)
+        except json.JSONDecodeError:
+            logger.warning(
+                "[PROMPT_OPTIMIZATION] emotional_needs JSON parse failed - record_id=%s",
+                prepared.get("id")
+            )
+            prepared["emotional_needs"] = None
+
+    return PromptOptimizationResponse.model_validate(prepared)
+
+
+def _mask_prompt_fragment(prompt: str, limit: int = 80) -> str:
+    """민감정보를 보호하기 위해 프롬프트 일부만 로깅한다."""
+
+    if not isinstance(prompt, str):
+        return ""
+
+    compact_prompt = " ".join(prompt.split())
+    if len(compact_prompt) <= limit:
+        return compact_prompt
+
+    return f"{compact_prompt[:limit]}...({len(compact_prompt)}자)"
+
+
 async def _background_generate_report(
     topic_id: int,
     artifact_id: int,
@@ -1451,15 +1804,44 @@ async def _background_generate_report(
 
         claude = ClaudeClient()
 
-        # System prompt 선택
-        system_prompt = await asyncio.to_thread(
-            get_system_prompt,
-            template_id=template_id,
-            user_id=int(user_id) if isinstance(user_id, str) else user_id
-        )
-
         # User prompt 구성
         user_prompt = f"주제: {topic}\n\n계획:\n{plan}\n\n위의 계획을 바탕으로 상세한 보고서를 작성해주세요."
+
+        optimized_system_prompt: Optional[str] = None
+
+        # 프롬프트 고도화 결과를 조회하여 Claude system prompt를 최적화
+        try:
+            latest_optimization = await asyncio.to_thread(
+                PromptOptimizationDB.get_latest_by_topic,
+                topic_id
+            )
+            optimization_response = _build_prompt_optimization_response(latest_optimization)
+
+            if optimization_response:
+                optimization_payload = map_optimized_to_claude_payload(
+                    optimization_response,
+                    user_prompt,
+                    PROMPT_OPTIMIZATION_DEFAULT_MODEL
+                )
+                optimized_system_prompt = optimization_payload.get("system")
+                logger.info("[BACKGROUND] Optimization result found - using optimized prompts")
+        except Exception as opt_exc:
+            logger.error(
+                "[BACKGROUND] Optimization lookup failed - topic_id=%s, error=%s",
+                topic_id,
+                str(opt_exc),
+                exc_info=True
+            )
+
+        if optimized_system_prompt:
+            system_prompt = optimized_system_prompt
+        else:
+            logger.info("[BACKGROUND] No optimization result - using default system prompt")
+            system_prompt = await asyncio.to_thread(
+                get_system_prompt,
+                template_id=template_id,
+                user_id=int(user_id) if isinstance(user_id, str) else user_id
+            )
 
         start_time = time.time()
         # ✅ Non-blocking: Claude API 호출을 스레드 끝에서 실행

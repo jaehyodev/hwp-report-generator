@@ -98,13 +98,16 @@ async def startup_event():
     init_admin_user()
     logger.info("애플리케이션 시작 완료")
 
-# CORS 설정
+# CORS 설정 - 환경별 프론트엔드 주소 지정
+FRONTEND_URLS = os.getenv("FRONTEND_URLS", "http://localhost:5173").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=FRONTEND_URLS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept"],
+    max_age=3600,
 )
 
 # 정적 파일 및 템플릿 설정

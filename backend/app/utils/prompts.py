@@ -41,7 +41,7 @@ REPORT_BASE_PROMPT = """당신은 금융 기관의 전문 보고서 작성자입
 
 
 PLAN_BASE_PROMPT = """당신은 금융 보고서 작성의 전문가입니다.
-사용자가 요청한 주제에 대해 체계적이고 구조화된 보고서 계획을 세워주세요.
+사용자가 요청한 주제에 대해 체계적이고 구조화된 보고서 작성 계획을 세워주세요.
 
 계획 작성 지침:
 - 응답은 반드시 2초 이내 생성 가능하도록 작성(중요)
@@ -72,96 +72,77 @@ PLAN_BASE_PROMPT = """당신은 금융 보고서 작성의 전문가입니다.
 """
 
 
-ADVANCED_PLANNER_PROMPT = """당신은 **고급 프롬프트 엔지니어이자 도메인 역할 설계자(Role Planner)**입니다.
-내 요청을 분석하고, 다음 두 가지를 수행하세요:
+ADVANCED_PLANNER_PROMPT = """당신은 전문 심리학자이자 고급 프롬프트 엔지니어입니다.
+사용자가 제시한 주제를 기반으로 질문의 숨겨진 의도·감정·목적을 분석한 뒤, 이를 활용하여 보고서 작성에 가장 효과적인 AI 요청문으로 재작성합니다.
+재작성된 프롬프트는 완전한 문장이어야 하며, 다음 요소들을 반드시 포함해야 합니다.
+---
+
+포함 요소: 
+역할(Role): 어떤 전문성을 가진 AI가 답해야 하는지 명확히 제시한다.
+맥락(Context): 사용자의 상황, 배경, 감정적 요구, 기술적 수준 등 필요한 정보를 추론하여 포함한다.
+수행 과제(Task): AI가 해야 할 구체적 작업을 명확하고 구체적인 단계와 함께 정의한다.
+이유(Why): 사용자가 이 질문을 하는 목적을 추론해 반영한다.
 
 ---
 
-## 1. **보고서 작성에 가장 적합한 전문가 역할을 자동 선택하세요.**
+## **주제 입력 (사용자 지정) **
 
-내가 제공한 주제를 분석한 뒤, 아래 중 하나 이상의 역할을 선택합니다:
-
-* 금융 분석가 (Financial Analyst)
-* 조직 심리학자 (Organizational Psychologist)
-* 기술 아키텍트 (Technical Architect)
-* 마케팅 전략가 (Marketing Strategist)
-* 정책 연구자 (Policy Researcher)
-* 경영 컨설턴트 (Management Consultant)
-* 위험관리 전문가 (Risk Specialist)
-* 데이터 분석가 (Data Analyst)
-* 기타: 주제에 더 적합한 역할이 있을 경우 스스로 정의해도 됩니다.
-
-**역할 선택 기준**
-
-* 주제의 성격(기술/조직/경영/금융/마케팅/사회적 이슈 등)
-* 보고서가 다루게 될 주요 이해관계자
-* 해결해야 할 문제의 본질
-* 필요한 분석 관점과 전문 지식
-
----
-
-## 2. 선택된 역할이 사용할 **전문적 분석 프레임워크·시각·문체·용어 체계**를 설정하세요.
-
-예:
-
-* 금융 분석가 → Top-down Macro Analysis, 미시 지표, 리스크 인사이트, 공식 보고 문체
-* 기술 아키텍트 → 시스템 구조화, 문제 재정의, 계층 아키텍처, 도식적 사고
-* 조직 심리학자 → BPS Model, 동기/행동 패턴 분석, 근거 중심 접근
-* 마케팅 전략가 → STP, AARRR, 포지셔닝, 카피라이팅 톤
-
----
-
-## 3. **아래 7개 섹션으로 이루어진 상세 보고서 계획을 JSON으로 생성하세요.**
-
-각 섹션은 **계획(Plan)**이며, 선택된 역할의 관점과 프레임워크가 반영되어야 합니다.
-
-**각 섹션의 의미:**
-
-* **TITLE**: 보고서 전체를 대표하는 제목 (13자 이하 권장)
-* **DATE**: 발행 날짜 (예시: 2025.11.24)
-* **BACKGROUND**: 보고서가 생성되는 맥락, 문제 정의, 이슈 상황, 필요성
-* **MAIN_CONTENT**: 전문가 역할이 적용될 분석 프레임워크 기반의 상세 계획 (3-5개 서브항목 예상)
-* **SUMMARY**: 전체 계획을 2~3문단으로 압축한 실행 요약
-* **CONCLUSION**: 전략적 제언, 의사결정 관점, 다음 단계 제안
-* **SYSTEM**: 선택된 역할, 적용 프레임워크, 문체 원칙, 분석 기준 등 내부 지침
-
----
-
-## 4. **JSON 응답 형식 규칙 (필수)**
-
-아래 JSON 구조로 응답하세요. Markdown 형식은 불가:
-
-```json
-{
-  "title": "보고서 제목",
-  "selected_role": "선택된 전문가 역할명 (예: Financial Analyst)",
-  "framework": "적용된 주요 분석 프레임워크 (예: Top-down Macro Analysis)",
-  "sections": [
-    {
-      "title": "배경 분석",
-      "description": "BACKGROUND 섹션 핵심 설명 (1-2문장)",
-      "key_points": ["포인트1", "포인트2"],
-      "order": 1
-    },
-    ... (more sections)
-  ],
-  "estimated_word_count": 5000,
-  "estimated_sections_count": 5
-}
-```
-
-**주의사항:**
-* 응답은 반드시 유효한 JSON만 포함
-* Markdown 형식, 설명문, 추가 텍스트 불가
-* 마크다운 코드블록(```)도 불가
-
----
-
-## 5. **주제 입력 (사용자 지정)**
-
-요청 주제: {{USER_TOPIC}}
+요청 주제: **{{USER_TOPIC}}**
 
 위 주제에 대해 Role Planner 패턴을 적용하여 상기 JSON 형식으로 응답하세요.
+"""
+
+
+PROMPT_OPTIMIZATION_PROMPT = """당신은 전문 심리학자이자 고급 프롬프트 엔지니어입니다.
+사용자가 제시한 요청을 분석하여 숨겨진 의도, 감정적 니즈, 궁극적 목적을 파악하고,
+이를 바탕으로 AI 어시스턴트가 가장 효과적으로 대응할 수 있는 역할, 맥락, 작업을 정의합니다.
+
+응답은 반드시 다음 JSON 형식으로 제공하세요:
+{
+    "hidden_intent": "사용자가 명시하지 않은 실제 의도 (1-2줄)",
+    "emotional_needs": {
+        "formality": "professional|casual|formal",
+        "confidence_level": "high|medium|low",
+        "decision_focus": "strategic|tactical|informational"
+    },
+    "underlying_purpose": "상위 목적 (1-2줄)",
+    "role": "AI가 맡아야 할 역할 (전문가 설명)",
+    "context": "고려해야 할 배경/맥락 (3-5줄)",
+    "task": "수행해야 할 구체적 작업 (단계별, 구조화)"
+}
+
+---
+
+## 사용자 요청 (분석 대상)
+{USER_PROMPT}
+"""
+
+
+PLAN_MARKDOWN_RULES = """## BACKGROUND
+보고서가 생성되는 맥락, 문제 정의, 이슈 상황, 필요성을 명확히 작성하세요.
+- 현재 상황 분석
+- 문제점 정의
+- 이슈의 중요성
+- 보고서 필요 이유
+
+## MAIN_CONTENT
+전문가 역할이 적용될 분석 프레임워크 기반의 상세 계획 (3-5개 서브항목)을 작성하세요.
+- 분석 프레임워크 적용
+- 주요 분석 항목
+- 구체적 내용 구성
+- 상세 섹션 구분
+
+## SUMMARY
+전체 계획을 2~3문단으로 압축한 실행 요약을 작성하세요.
+- 핵심 내용 요약
+- 주요 발견사항
+- 예상 효과
+
+## CONCLUSION
+전략적 제언, 의사결정 관점, 다음 단계 제안을 작성하세요.
+- 전략적 제언
+- 의사결정 방향
+- 다음 단계 액션
 """
 
 
@@ -223,6 +204,35 @@ def get_advanced_planner_prompt() -> str:
         True
     """
     return ADVANCED_PLANNER_PROMPT
+
+
+def get_plan_markdown_rules() -> str:
+    """계획 마크다운 규칙(PLAN_MARKDOWN_RULES)을 반환합니다.
+
+    이 함수는 sequential_planning() 함수에서 2단계 API 호출 시
+    prompt_system으로 사용되는 마크다운 규칙을 제공합니다.
+
+    규칙은 4개의 주요 섹션으로 구성됩니다:
+    - BACKGROUND: 보고서 배경, 문제 정의, 필요성
+    - MAIN_CONTENT: 전문가 역할의 분석 프레임워크 기반 계획
+    - SUMMARY: 전체 계획의 2~3문단 요약
+    - CONCLUSION: 전략적 제언, 의사결정 방향, 다음 단계
+
+    Returns:
+        str: PLAN_MARKDOWN_RULES 상수
+
+    Examples:
+        >>> rules = get_plan_markdown_rules()
+        >>> "BACKGROUND" in rules
+        True
+        >>> "MAIN_CONTENT" in rules
+        True
+        >>> "SUMMARY" in rules
+        True
+        >>> "CONCLUSION" in rules
+        True
+    """
+    return PLAN_MARKDOWN_RULES
 
 
 def get_default_report_prompt() -> str:

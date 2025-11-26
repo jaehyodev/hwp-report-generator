@@ -11,7 +11,7 @@ import time
 from typing import Dict, Optional, Any
 
 from app.utils.claude_client import ClaudeClient
-from app.utils.prompts import get_base_plan_prompt, get_advanced_planner_prompt
+from app.utils.prompts import get_base_plan_prompt, get_advanced_planner_prompt, get_plan_markdown_rules
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,9 @@ async def sequential_planning(
                     "order": 1
                 },
                 ...
-            ]
+            ],
+            "prompt_user": "## 선택된 역할: ...\n..." (only when is_template_used=False),
+            "prompt_system": "## BACKGROUND\n..." (only when is_template_used=False)
         }
 
     Raises:
@@ -78,34 +80,92 @@ async def sequential_planning(
     logger.info(f"Sequential Planning started - topic={topic}, template_id={template_id}")
 
     try:
-        # 2. Template의 prompt_system 로드
-        # Select prompt based on is_template_used parameter
+        # 2. Single-step or two-step planning based on is_template_used parameter
         if is_template_used:
+            # Single-step: Traditional template-based planning
             guidance_prompt = get_base_plan_prompt()
+            input_prompt = f"""요청 주제: {topic} {guidance_prompt} """
+
+            # Single API call
+            plan_response = await _call_sequential_planning(
+                input_prompt,
+                is_web_search=is_web_search
+            )
+
+            # Parse response
+            plan_dict = _parse_plan_response(plan_response)
+
+            elapsed = time.time() - start_time
+            logger.info(f"Sequential Planning (single-step) completed - elapsed={elapsed:.2f}s, sections={len(plan_dict['sections'])}")
+
+            return plan_dict
+
         else:
-            guidance_prompt = get_advanced_planner_prompt()
+            # Two-step: Advanced Role Planner with 2-stage API calling
+            logger.info("Sequential Planning (two-step) started - using Advanced Role Planner")
 
-        # Replace placeholder if using advanced planner prompt
-        if not is_template_used:
-            guidance_prompt = guidance_prompt.replace("{{USER_TOPIC}}", topic)
+            # Step 1: First API call with ADVANCED_PLANNER_PROMPT
+            advanced_prompt = get_advanced_planner_prompt()
+            advanced_prompt = advanced_prompt.replace("{{USER_TOPIC}}", topic)
+            first_input_prompt = advanced_prompt
 
-        # 3. Input prompt 구성
-        input_prompt = f"""요청 주제: {topic} {guidance_prompt} """
+            first_response = await _call_sequential_planning(
+                first_input_prompt,
+                is_web_search=is_web_search
+            )
 
-        # 4. Claude API 호출 (Sequential Planning)
-        plan_response = await _call_sequential_planning(
-            input_prompt,
-            is_web_search=is_web_search
-        )
+            logger.info(f"Sequential Planning - first API call completed")
 
-        # 5. 응답 파싱: plan 텍스트 + sections 배열 추출
-        plan_dict = _parse_plan_response(plan_response)
+            # Step 2: Convert first response to markdown for prompt_user
+            first_response_json = json.loads(_extract_json_from_response(first_response))
+            prompt_user = _build_prompt_user_from_first_response(first_response_json)
 
-        elapsed = time.time() - start_time
-        logger.info(f"Sequential Planning completed - elapsed={elapsed:.2f}s, sections={len(plan_dict['sections'])}")
+            logger.info(f"Sequential Planning - first response converted to markdown (prompt_user)")
 
-        return plan_dict
-    
+            # Step 3: Second API call with prompt_user included
+            second_input_prompt = f"""
+이전 분석 결과를 기반으로 상세 계획을 생성하세요:
+
+{prompt_user}
+
+위 분석 결과를 참고하여, 다음 구조의 JSON으로 최종 보고서 계획을 생성하세요:
+{{
+    "title": "보고서 제목",
+    "sections": [
+        {{
+            "title": "섹션 제목",
+            "description": "섹션 설명 (1문장)",
+            "key_points": ["포인트1", "포인트2", "포인트3"],
+            "order": 1
+        }},
+        ...
+    ],
+    "estimated_word_count": 5000,
+    "estimated_sections_count": 5
+}}
+
+응답은 반드시 유효한 JSON만 포함하세요. Markdown 형식이나 추가 설명은 불가합니다.
+"""
+
+            second_response = await _call_sequential_planning(
+                second_input_prompt,
+                is_web_search=is_web_search
+            )
+
+            logger.info(f"Sequential Planning - second API call completed")
+
+            # Step 4: Parse second response
+            plan_dict = _parse_plan_response(second_response)
+
+            # Step 5: Add prompt_user and prompt_system to response
+            plan_dict["prompt_user"] = prompt_user
+            plan_dict["prompt_system"] = get_plan_markdown_rules()
+
+            elapsed = time.time() - start_time
+            logger.info(f"Sequential Planning (two-step) completed - elapsed={elapsed:.2f}s, sections={len(plan_dict['sections'])}")
+
+            return plan_dict
+
     except Exception as e:
         logger.error(f"Sequential Planning failed - error={str(e)}", exc_info=True)
         raise SequentialPlanningError(f"Failed to generate plan: {str(e)}")
@@ -229,7 +289,6 @@ def _parse_plan_response(plan_text: str) -> Dict[str, Any]:
 
         # 마크다운 형식의 plan 생성
         plan_md = _build_text_plan(plan_json)
-
         return {
             "plan": plan_md,
             "sections": sections
@@ -273,6 +332,71 @@ def _build_text_plan(plan_json: Dict[str, Any]) -> str:
 
         if description:
             lines.append(f"설명: {description}")
+            lines.append("")
+
+        if key_points:
+            lines.append("주요 포인트:")
+            for point in key_points:
+                lines.append(f"- {point}")
+            lines.append("")
+
+    return "\n".join(lines)
+
+
+def _build_prompt_user_from_first_response(first_response_json: Dict[str, Any]) -> str:
+    """
+    첫 번째 API 응답 JSON을 마크다운으로 변환하여 prompt_user로 사용
+
+    Role Planner 응답 (selected_role, framework, sections)을 마크다운 형식으로 변환합니다.
+
+    Args:
+        first_response_json: 첫 번째 Claude API 응답 JSON
+        {
+            "selected_role": "Financial Analyst",
+            "framework": "Top-down Macro Analysis",
+            "sections": [...]
+        }
+
+    Returns:
+        str: 마크다운 형식의 prompt_user
+
+    Examples:
+        >>> response = {
+        ...     "selected_role": "Financial Analyst",
+        ...     "framework": "Top-down Macro Analysis",
+        ...     "sections": [
+        ...         {"title": "배경", "description": "...", "key_points": [...], "order": 1}
+        ...     ]
+        ... }
+        >>> md = _build_prompt_user_from_first_response(response)
+        >>> "선택된 역할" in md
+        True
+        >>> "프레임워크" in md
+        True
+    """
+    selected_role = first_response_json.get("selected_role", "전문가")
+    framework = first_response_json.get("framework", "분석 프레임워크")
+    sections = first_response_json.get("sections", [])
+
+    lines = [
+        f"## 선택된 역할: {selected_role}",
+        f"{selected_role} 관점에서 주제를 분석합니다.",
+        "",
+        f"## 프레임워크: {framework}",
+        f"{framework}을(를) 기반으로 분석합니다.",
+        "",
+    ]
+
+    # 섹션별 계획 추가
+    for idx, section in enumerate(sections, 1):
+        section_title = section.get("title", f"섹션 {idx}")
+        description = section.get("description", "")
+        key_points = section.get("key_points", [])
+
+        lines.append(f"## 섹션 {idx}: {section_title}")
+
+        if description:
+            lines.append(description)
             lines.append("")
 
         if key_points:

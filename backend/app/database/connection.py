@@ -195,6 +195,22 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # 컬럼이 이미 존재하면 무시
 
+    # Topics 테이블 마이그레이션: prompt_user 컬럼 추가 (v2.7 Sequential Planning)
+    try:
+        cursor.execute("""
+            ALTER TABLE topics ADD COLUMN prompt_user TEXT DEFAULT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass  # 컬럼이 이미 존재하면 무시
+
+    # Topics 테이블 마이그레이션: prompt_system 컬럼 추가 (v2.7 Sequential Planning)
+    try:
+        cursor.execute("""
+            ALTER TABLE topics ADD COLUMN prompt_system TEXT DEFAULT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass  # 컬럼이 이미 존재하면 무시
+
     # Artifacts 테이블 마이그레이션: 상태 관리 컬럼 추가 (v2.5, Option A)
     try:
         cursor.execute("""
@@ -231,6 +247,41 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # 프롬프트 고도화 결과 테이블 (v2.7+)
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS prompt_optimization_result (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+
+                -- 입력값 (사용자 요청)
+                user_prompt TEXT NOT NULL,
+
+                -- 분석 결과 (숨겨진 의도)
+                hidden_intent TEXT,
+                emotional_needs TEXT,  -- JSON을 TEXT로 저장
+                underlying_purpose TEXT,
+
+                -- 최적화된 프롬프트 (Claude 정제)
+                role TEXT NOT NULL,
+                context TEXT NOT NULL,
+                task TEXT NOT NULL,
+
+                -- 메타데이터
+                model_name TEXT NOT NULL DEFAULT 'claude-sonnet-4-5-20250929',
+                latency_ms INTEGER DEFAULT 0,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            )
+        """)
+    except sqlite3.OperationalError:
+        pass  # 테이블이 이미 존재하면 무시
+
     # 인덱스 생성
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_user_id ON reports(user_id)")
@@ -246,6 +297,9 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_usage_message_id ON ai_usage(message_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_templates_user_id ON templates(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_placeholders_template_id ON placeholders(template_id)")
+    # prompt_optimization_result 테이블 인덱스 (v2.7+)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_optimization_topic_date ON prompt_optimization_result(topic_id, created_at DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_optimization_user_id ON prompt_optimization_result(user_id)")
 
     conn.commit()
     conn.close()
