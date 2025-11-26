@@ -1083,13 +1083,19 @@ async def plan_report(
             is_template_used=request.is_template_used
         )
 
-        # 새로운 topic 생성 (prompt_user, prompt_system 포함)
-        topic_data = TopicCreate(
-            input_prompt=request.topic,
-            template_id=request.template_id,
-            prompt_user=plan_result.get("prompt_user"),
-            prompt_system=plan_result.get("prompt_system")
-        )
+        # 템플릿 사용 여부에 따라 prompt 전달 방식을 분기
+        if request.is_template_used:
+            topic_data = TopicCreate(
+                input_prompt=request.topic,
+                template_id=request.template_id
+            )
+        else:
+            topic_data = TopicCreate(
+                input_prompt=request.topic,
+                template_id=request.template_id,
+                prompt_user=plan_result.get("prompt_user"),
+                prompt_system=plan_result.get("prompt_system")
+            )
         topic = TopicDB.create_topic(current_user.id, topic_data)
 
         elapsed = time.time() - start_time
