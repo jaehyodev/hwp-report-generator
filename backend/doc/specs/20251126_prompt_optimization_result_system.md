@@ -45,29 +45,30 @@
 
 ```mermaid
 flowchart TD
-    A[Client] -->|POST /api/topics/[id]/optimize-prompt<br/>Body: user_prompt| B{Topic 존재?}
+    A[Client] -->|POST /api/topics/:id/optimize-prompt\nBody: user_prompt| B{Topic 존재?}
     B -- No --> C["404 NOT_FOUND<br/>(TOPIC.NOT_FOUND)"]
     B -- Yes --> D{권한 확인<br/>topic.user_id == current_user.id?}
     D -- No --> E["403 FORBIDDEN<br/>(TOPIC.UNAUTHORIZED)"]
     D -- Yes --> F["Claude API 호출<br/>(프롬프트 고도화)"]
     F --> G{응답 파싱<br/>유효한 JSON?}
-    G -- No --> H["504 GATEWAY_TIMEOUT<br/>또는 500 ERROR"]
+    G -- No --> H[504 GATEWAY_TIMEOUT<br/>또는 500 ERROR]
     G -- Yes --> I["필드 추출<br/>(hidden_intent, role, context, task 등)"]
     I --> J["DB 저장<br/>(prompt_optimization_result 테이블)"]
-    J --> K["200 OK<br/>+ PromptOptimizationResponse"]
+    J --> K[200 OK<br/>+ PromptOptimizationResponse]
 
     style A fill:#e1f5ff
     style K fill:#c8e6c9
     style C fill:#ffcdd2
     style E fill:#ffcdd2
     style H fill:#ffcdd2
+
 ```
 
 ### 3.2 고도화 결과 활용 흐름 (보고서 생성)
 
 ```mermaid
 flowchart TD
-    A[Client] -->|POST /api/topics/[id]/generate<br/>또는 POST /api/topics/[id]/ask| B["generate_topic_report()"]
+    A[Client] -->|POST /api/topics/:id/generate<br/>또는 POST /api/topics/:id/ask| B["generate_topic_report()"]
     B --> C["고도화 결과 조회<br/>prompt_optimization_db.get_latest()"]
     C --> D{결과 존재?}
     D -- No --> E["기본 프롬프트 사용<br/>(현재 동작)"]
@@ -82,11 +83,39 @@ flowchart TD
     style F fill:#fff9c4
 ```
 
-### 3.3 조회 흐름 (이력)
+### 3.3 보고서 계획 생성 시 프롬프트 최적화 흐름
 
 ```mermaid
 flowchart TD
-    A[Client] -->|GET /api/topics/[id]/optimization-result| B{Topic 존재?}
+    A[Client] -->|POST /api/topics/plan<br/>Body: topic, is_template_used| B["plan_report()"]
+    B --> C["① 프롬프트 최적화<br/>optimize_prompt_with_claude()"]
+    C --> D{최적화 성공?}
+    D -- No --> E["경고 로깅<br/>(계속 진행)"]
+    D -- Yes --> F["optimization_result 저장<br/>PromptOptimizationDB.create()"]
+    E --> G["② Sequential Planning<br/>sequential_planning()"]
+    F --> G
+    G --> H["계획 결과 분석<br/>(섹션 추출)"]
+    H --> I["③ Topic 생성<br/>TopicCreate() 호출"]
+    I --> J["200 OK<br/>+ PlanResponse<br/>(최적화 정보 제외)"]
+
+    style A fill:#e1f5ff
+    style J fill:#c8e6c9
+    style F fill:#fff9c4
+    style C fill:#e3f2fd
+```
+
+**주요 사항:**
+- **Step ①:** `optimize_prompt_with_claude(request.topic)` 호출 (30초 타임아웃)
+- **Step ②:** 최적화가 성공하면 `PromptOptimizationDB.create(topic_id, user_id, ...)`로 저장
+- **Step ③:** 최적화 실패 시에도 계속 진행 (경고 로깅만 수행)
+- **응답:** `PlanResponse`는 plan 정보만 포함 (optimization 정보 미포함)
+- **부작용:** `optimization_result` 테이블에 자동 저장됨
+
+### 3.4 조회 흐름 (이력)
+
+```mermaid
+flowchart TD
+    A[Client] -->|GET /api/topics/:id/optimization-result| B{Topic 존재?}
     B -- No --> C["404 NOT_FOUND"]
     B -- Yes --> D{권한 확인?}
     D -- No --> E["403 FORBIDDEN"]

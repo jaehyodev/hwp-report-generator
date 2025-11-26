@@ -1074,29 +1074,47 @@ async def plan_report(
     try:
         logger.info(f"[PLAN] Started - topic='{request.topic}', template_id={request.template_id}, is_template_used={request.is_template_used}, user_id={current_user.id}")
 
-        # Sequential Planning 호출
-        plan_result = await sequential_planning(
-            topic=request.topic,
-            template_id=request.template_id,
-            user_id=current_user.id,
-            is_web_search=request.is_web_search,
-            is_template_used=request.is_template_used
-        )
-
-        # 템플릿 사용 여부에 따라 prompt 전달 방식을 분기
+        # Step 1. Sequential Planning 전에 Topic을 생성해 topic_id를 확보한다.
         if request.is_template_used:
             topic_data = TopicCreate(
                 input_prompt=request.topic,
                 template_id=request.template_id
             )
         else:
+            # is_template_used=False 여도 초기 생성은 동일하게 진행 (추후 plan_result 반영)
             topic_data = TopicCreate(
                 input_prompt=request.topic,
-                template_id=request.template_id,
-                prompt_user=plan_result.get("prompt_user"),
-                prompt_system=plan_result.get("prompt_system")
+                template_id=request.template_id
             )
         topic = TopicDB.create_topic(current_user.id, topic_data)
+        logger.info(f"[PLAN] Topic created - topic_id={topic.id}")
+
+        # Step 2. topic_id를 전달하여 Sequential Planning을 호출하고 실패 시 롤백
+        try:
+            plan_result = await sequential_planning(
+                topic=request.topic,
+                template_id=request.template_id,
+                user_id=current_user.id,
+                is_web_search=request.is_web_search,
+                is_template_used=request.is_template_used,
+                topic_id=topic.id
+            )
+        except Exception as planning_error:
+            logger.error(f"[PLAN] Sequential Planning failed - topic_id={topic.id}, error={str(planning_error)}")
+            TopicDB.delete_topic(topic.id)
+            logger.info(f"[PLAN] Topic rolled back - topic_id={topic.id}")
+            raise
+
+        # Step 3. 템플릿 미사용 케이스는 plan_result 기반 프롬프트를 Topic에 반영
+        if request.is_template_used:
+            # 템플릿 기반 플로우는 추가 프롬프트 저장이 필요 없음
+            pass
+        else:
+            TopicDB.update_topic_prompts(
+                topic.id,
+                plan_result.get("prompt_user"),
+                plan_result.get("prompt_system")
+            )
 
         elapsed = time.time() - start_time
         logger.info(f"[PLAN] Completed - topic_id={topic.id}, elapsed={elapsed:.2f}s")

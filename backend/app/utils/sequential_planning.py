@@ -12,8 +12,11 @@ from typing import Dict, Optional, Any
 
 from app.utils.claude_client import ClaudeClient
 from app.utils.prompts import get_base_plan_prompt, get_advanced_planner_prompt, get_plan_markdown_rules
+from app.utils.prompt_optimizer import optimize_prompt_with_claude
 
 logger = logging.getLogger(__name__)
+
+PROMPT_OPTIMIZATION_DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
 
 class SequentialPlanningError(Exception):
@@ -31,7 +34,8 @@ async def sequential_planning(
     template_id: Optional[int] = None,
     user_id: Optional[str] = None,
     is_web_search: bool = False,
-    is_template_used: bool = True
+    is_template_used: bool = True,
+    topic_id: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Sequential Planning을 이용한 보고서 계획 수립
@@ -46,6 +50,7 @@ async def sequential_planning(
         is_template_used: If True, use template-based prompt (get_base_plan_prompt).
                           If False, use advanced planner prompt (get_advanced_planner_prompt).
                           Default: True
+        topic_id: Topic이 생성된 경우 topic_id 전달. isTemplateUsed=false일 때 프롬프트 최적화 저장용
 
     Returns:
         {
@@ -163,6 +168,48 @@ async def sequential_planning(
 
             elapsed = time.time() - start_time
             logger.info(f"Sequential Planning (two-step) completed - elapsed={elapsed:.2f}s, sections={len(plan_dict['sections'])}")
+
+            # isTemplateUsed=false일 경우, prompt_user를 기반으로 프롬프트 최적화 수행
+            if not is_template_used and topic_id is not None:
+                try:
+                    logger.info(
+                        "Sequential Planning - Optimizing prompt based on Advanced Role Planner result - topic_id=%s",
+                        topic_id
+                    )
+
+                    optimization_result = await optimize_prompt_with_claude(
+                        user_prompt=prompt_user,
+                        topic_id=topic_id,
+                        model=PROMPT_OPTIMIZATION_DEFAULT_MODEL
+                    )
+
+                    from app.database.prompt_optimization_db import PromptOptimizationDB
+
+                    PromptOptimizationDB.create(
+                        topic_id=topic_id,
+                        user_id=int(user_id) if isinstance(user_id, str) else user_id,
+                        user_prompt=prompt_user,
+                        hidden_intent=optimization_result.get("hidden_intent"),
+                        emotional_needs=optimization_result.get("emotional_needs"),
+                        underlying_purpose=optimization_result.get("underlying_purpose"),
+                        role=optimization_result.get("role"),
+                        context=optimization_result.get("context"),
+                        task=optimization_result.get("task"),
+                        model_name=PROMPT_OPTIMIZATION_DEFAULT_MODEL,
+                        latency_ms=optimization_result.get("latency_ms", 0)
+                    )
+
+                    logger.info(
+                        "Sequential Planning - Prompt optimization completed - topic_id=%s",
+                        topic_id
+                    )
+                except Exception as opt_exc:
+                    logger.warning(
+                        "Sequential Planning - Prompt optimization failed (non-blocking) - topic_id=%s, error=%s",
+                        topic_id,
+                        str(opt_exc),
+                        exc_info=True
+                    )
 
             return plan_dict
 

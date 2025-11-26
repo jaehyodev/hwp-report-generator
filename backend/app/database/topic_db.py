@@ -171,6 +171,26 @@ class TopicDB:
         return TopicDB._row_to_topic(row) if row else None
 
     @staticmethod
+    def update_topic_prompts(topic_id: int, prompt_user: Optional[str], prompt_system: Optional[str]) -> bool:
+        """Updates prompt fields for a topic."""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            UPDATE topics
+            SET prompt_user = ?, prompt_system = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (prompt_user, prompt_system, datetime.now(), topic_id)
+        )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        conn.close()
+
+        return updated
+
+    @staticmethod
     def delete_topic(topic_id: int) -> bool:
         """Deletes a topic (hard delete, cascades to messages/artifacts).
 
