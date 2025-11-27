@@ -1103,17 +1103,71 @@ async def plan_report(
             logger.info(f"[PLAN] Topic rolled back - topic_id={topic.id}")
             raise
 
-        # Step 3. 템플릿 미사용 케이스는 plan_result 기반 프롬프트를 Topic에 반영
-        # 템플릿 기반 플로우는 프롬프트가 고정되어 있으므로 저장 불필요
-        # if request.is_template_used:
-        #     # 템플릿 기반 플로우는 추가 프롬프트 저장이 필요 없음
-        #     pass
-        # else:
-        #     TopicDB.update_topic_prompts(
-        #         topic.id,
-        #         plan_result.get("prompt_user"),
-        #         plan_result.get("prompt_system")
-        #     )
+        # Step 3. isTemplateUsed 값에 따른 조건부 prompt 저장
+        if request.is_template_used:
+            # 템플릿 기반 경로: Template의 prompt 정보 저장
+            try:
+                # 3-1. Template 조회
+                template = TemplateDB.get_template_by_id(request.template_id)
+
+                # 3-2. Template 존재 확인
+                if template is None:
+                    TopicDB.delete_topic(topic.id)
+                    logger.warning(f"[PLAN] Template not found - template_id={request.template_id}")
+                    return error_response(
+                        message="템플릿을 찾을 수 없습니다.",
+                        code=ErrorCode.RESOURCE_NOT_FOUND,
+                        http_status=404,
+                        details={"template_id": request.template_id}
+                    )
+
+                # 3-3. 권한 검증 (소유자 또는 admin)
+                if template.user_id != current_user.id and current_user.role != 'admin':
+                    TopicDB.delete_topic(topic.id)
+                    logger.warning(f"[PLAN] Access denied - template_id={request.template_id}, user_id={current_user.id}")
+                    return error_response(
+                        message="이 템플릿에 접근할 수 없습니다.",
+                        code=ErrorCode.ACCESS_DENIED,
+                        http_status=403,
+                        details={"template_id": request.template_id}
+                    )
+
+                # 3-4. prompt_user, prompt_system 저장
+                try:
+                    TopicDB.update_topic_prompts(
+                        topic.id,
+                        template.prompt_user,
+                        template.prompt_system
+                    )
+                except Exception as e:
+                    logger.warning(f"[PLAN] Update topic prompts failed (non-blocking) - topic_id={topic.id}, error={str(e)}")
+
+            except Exception as e:
+                logger.warning(f"[PLAN] Template-based prompt update failed (non-blocking) - topic_id={topic.id}, error={str(e)}")
+        else:
+            # 최적화 기반 경로: PromptOptimization 결과에서 user_prompt 저장
+            try:
+                # 3-1. PromptOptimization 결과 조회
+                opt_result = PromptOptimizationDB.get_latest_by_topic(topic.id)
+
+                if opt_result is None:
+                    logger.warning(f"[PLAN] PromptOptimization result not found - topic_id={topic.id}")
+                    prompt_user = None
+                else:
+                    prompt_user = opt_result.get('user_prompt')
+
+                # 3-2. prompt_user만 저장 (prompt_system=None)
+                try:
+                    TopicDB.update_topic_prompts(
+                        topic.id,
+                        prompt_user,
+                        prompt_system=None
+                    )
+                except Exception as e:
+                    logger.warning(f"[PLAN] Update topic prompts failed (non-blocking) - topic_id={topic.id}, error={str(e)}")
+
+            except Exception as e:
+                logger.warning(f"[PLAN] Optimization-based prompt update failed (non-blocking) - topic_id={topic.id}, error={str(e)}")
 
         elapsed = time.time() - start_time
         logger.info(f"[PLAN] Completed - topic_id={topic.id}, elapsed={elapsed:.2f}s")

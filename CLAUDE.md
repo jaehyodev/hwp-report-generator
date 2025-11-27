@@ -565,6 +565,124 @@ PromptOptimizationDB.create(
 
 ---
 
+### v2.9 (2025-11-27) - POST /api/topics/plan 프롬프트 데이터 조건부 저장
+
+✅ **POST /api/topics/plan 동작 개선**
+- isTemplateUsed 플래그 기반 조건부 데이터 저장
+- Template-based 경로: templates DB에서 prompt_user, prompt_system 조회
+- Optimization-based 경로: prompt_optimization_result에서 user_prompt 조회
+- 두 경로 모두 TopicDB.update_topic_prompts()로 저장
+
+✅ **Template 기반 처리 (isTemplateUsed=true)**
+- 단계 1: sequential_planning() 실행 → plan 결과 반환
+- 단계 2: Template 조회 (TemplateDB.get_template_by_id)
+  - 존재하지 않음: 404 NOT_FOUND, 롤백
+  - 권한 없음: 403 FORBIDDEN (owner/admin만), 롤백
+- 단계 3: TopicDB.update_topic_prompts(topic_id, template.prompt_user, template.prompt_system) 저장
+- 단계 4: 200 OK 응답 (plan + topic_id)
+
+✅ **Optimization 기반 처리 (isTemplateUsed=false)**
+- 단계 1: sequential_planning() 실행 → plan 결과 반환
+- 단계 2: PromptOptimizationDB.get_latest_by_topic(topic_id) 조회
+  - 결과 없음: WARN 로그 (비차단, prompt_user=NULL)
+  - 결과 있음: user_prompt 추출
+- 단계 3: TopicDB.update_topic_prompts(topic_id, prompt_user, prompt_system=None) 저장
+- 단계 4: 200 OK 응답 (plan + topic_id)
+
+✅ **에러 처리 전략**
+- Template 권한 검증: 403 반환 (사용자 권한 확인)
+- Template 미존재: 404 반환
+- PromptOptimization 미존재: 경고 로그만 (비차단)
+- DB 저장 실패: 경고 로그만 (비차단)
+
+✅ **테스트 완료 (9/9 TC)**
+- TC-001: Template 사용 성공 + 권한 검증
+- TC-002: Optimization 사용 성공
+- TC-003: Template 미존재 404
+- TC-004: Template 권한 거부 403
+- TC-005: PromptOptimization 미존재 WARN 로그
+- TC-006: API 전체 흐름 (Template 기반)
+- TC-007: API 전체 흐름 (Optimization 기반)
+- TC-008: prompt_user/system 필드 타입 검증
+- TC-009: 응답 시간 < 2000ms 검증
+- ✅ 9/9 PASS (100%)
+- ✅ 15개 기존 regression 테스트 PASS (100%)
+
+### 신규 API 엔드포인트
+- 변경: POST /api/topics/plan (기존 엔드포인트 동작 개선)
+
+### 변경된 함수
+
+| 함수 | 파일 | 변경 내용 |
+|------|------|---------|
+| plan_report() | backend/app/routers/topics.py | sequential_planning() 후 조건부 prompt 저장 로직 추가 (line 1106-1170) |
+
+### 데이터 흐름 예시
+
+**Template-based (isTemplateUsed=true):**
+```
+POST /api/topics/plan
+├─ sequential_planning(topic, template_id, ...)
+├─ TemplateDB.get_template_by_id(template_id)
+├─ 권한 검증 (owner/admin)
+├─ TopicDB.update_topic_prompts(topic_id, template.prompt_user, template.prompt_system)
+└─ 200 OK { plan: "...", topic_id: 123 }
+```
+
+**Optimization-based (isTemplateUsed=false):**
+```
+POST /api/topics/plan
+├─ sequential_planning(topic, template_id, ...)
+├─ PromptOptimizationDB.get_latest_by_topic(topic_id)
+├─ TopicDB.update_topic_prompts(topic_id, user_prompt, prompt_system=None)
+└─ 200 OK { plan: "...", topic_id: 123 }
+```
+
+### Unit Spec
+- 파일: `backend/doc/specs/20251127_api_topics_plan_prompt_enhancement.md`
+- 9개 테스트 케이스 + 에러 처리 시나리오
+- 2차 수정 사항 반영 (output_format, prompt_system 저장, 권한 검증)
+
+### 구현 상세
+
+**topics.py - plan_report() (lines 1106-1170):**
+```python
+if request.is_template_used:
+    # Template-based 경로
+    template = TemplateDB.get_template_by_id(request.template_id)
+    if template is None:
+        TopicDB.delete_topic(topic.id)  # Rollback
+        return error_response(..., ErrorCode.RESOURCE_NOT_FOUND, 404)
+
+    if template.user_id != current_user.id and current_user.role != 'admin':
+        TopicDB.delete_topic(topic.id)  # Rollback
+        return error_response(..., ErrorCode.ACCESS_DENIED, 403)
+
+    try:
+        TopicDB.update_topic_prompts(
+            topic.id,
+            template.prompt_user,
+            template.prompt_system
+        )
+    except Exception as e:
+        logger.warning(f"[PLAN] Update failed - {str(e)}")
+else:
+    # Optimization-based 경로
+    opt_result = PromptOptimizationDB.get_latest_by_topic(topic.id)
+    if opt_result is None:
+        logger.warning(f"[PLAN] PromptOptimization not found - topic_id={topic.id}")
+        prompt_user = None
+    else:
+        prompt_user = opt_result.get('user_prompt')
+
+    try:
+        TopicDB.update_topic_prompts(topic.id, prompt_user, prompt_system=None)
+    except Exception as e:
+        logger.warning(f"[PLAN] Update failed - {str(e)}")
+```
+
+---
+
 **마지막 업데이트:** 2025-11-27
-**버전:** 2.8.0
-**상태:** ✅ Prompt Optimization 스키마 확장 완료
+**버전:** 2.9.0
+**상태:** ✅ /api/topics/plan 프롬프트 데이터 조건부 저장 완료
