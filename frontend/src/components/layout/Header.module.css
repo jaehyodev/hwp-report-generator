@@ -5,7 +5,7 @@
     right: 0;
     z-index: 100;
     height: var(--header-height);
-    color: var(--color-white);
+    color: var(--text-primary);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     padding: 0 var(--spacing-lg);
     line-height: 1.375;
@@ -34,6 +34,7 @@
     align-items: center;
     gap: var(--spacing-xxs);
     padding: 0 var(--spacing-sm);
+    color: var(--color-white);
 }
 
 .username {

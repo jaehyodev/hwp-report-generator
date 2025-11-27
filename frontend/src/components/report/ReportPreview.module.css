@@ -4,7 +4,7 @@
     right: 0;
     width: 28rem;
     height: 100vh;
-    background-color: #ffffff;
+    background-color: var(--bg-primary);
     border-left: 1px solid #e5e5e5;
     display: flex;
     flex-direction: column;
@@ -35,7 +35,7 @@
 .previewTitle {
     font-weight: 600;
     font-size: 1rem;
-    color: #1a1a1a;
+    color: var(--text-primary);
 }
 
 .previewActions {
@@ -56,21 +56,19 @@
     cursor: pointer;
     transition: all 0.2s ease;
     font-size: 1rem;
-    color: #666666;
+    color: var(--text-primary);
 }
 
 .previewActionBtn:hover {
-    background-color: #f5f5f5;
-    color: #1a1a1a;
+    background-color: var(--bg-primary-hover);
 }
 
 .previewActionBtn.download {
-    color: #1976d2;
+    color: var(--primary-color);
 }
 
 .previewActionBtn.download:hover {
-    background-color: #e8f0fe;
-    color: #1565c0;
+    color: var(--primary-hover);
 }
 
 .previewContent {
@@ -85,7 +83,7 @@
     color: #1976d2;
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
-    border-bottom: 1px solid #e5e5e5;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .previewText {
@@ -138,7 +136,7 @@
 /* 마크다운 스타일 */
 .markdown {
     line-height: 1.7;
-    color: var(--color-text-primary, #1a1a1a);
+    color: var(--text-primary);
     word-wrap: break-word;
 }
 
@@ -148,8 +146,8 @@
     font-weight: 700;
     margin: 1.5rem 0 1rem 0;
     padding-bottom: 0.5rem;
-    border-bottom: 2px solid #e5e5e5;
-    color: #1a1a1a;
+    border-bottom: 2px solid var(--border-color);
+    color: var(--text-primary);
 }
 
 .markdown h2 {
@@ -157,28 +155,29 @@
     font-weight: 600;
     margin: 1.25rem 0 0.75rem 0;
     padding-bottom: 0.3rem;
-    border-bottom: 1px solid #e5e5e5;
-    color: #1a1a1a;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
 }
 
 .markdown h3 {
     font-size: 1.125rem;
     font-weight: 600;
     margin: 1rem 0 0.5rem 0;
-    color: #1a1a1a;
+    color: var(--text-primary);
 }
 
 .markdown h4 {
     font-size: 1rem;
     font-weight: 600;
     margin: 0.75rem 0 0.5rem 0;
-    color: #1a1a1a;
+    color: var(--text-primary);
 }
 
 /* 단락 */
 .markdown p {
     margin: 0.75rem 0;
     line-height: 1.8;
+    color: var(--text-primary);
 }
 
 /* 목록 */
@@ -190,6 +189,7 @@
 
 .markdown li {
     margin: 0.25rem 0;
+    color: var(--text-primary);
 }
 
 .markdown ul {
@@ -230,7 +230,7 @@
 
 /* 인용구 */
 .markdown blockquote {
-    border-left: 4px solid #1976d2;
+    border-left: 4px solid var(--primary-color);
     padding-left: 1rem;
     margin: 1rem 0;
     color: #666666;
@@ -238,7 +238,7 @@
 
 /* 링크 */
 .markdown a {
-    color: #1976d2;
+    color: var(--primary-color);
     text-decoration: none;
 }
 
@@ -249,7 +249,7 @@
 /* 구분선 */
 .markdown hr {
     border: none;
-    border-top: 2px solid #e5e5e5;
+    border-top: 2px solid var(--border-color);
     margin: 2rem 0;
 }
 
@@ -264,7 +264,7 @@
 /* 강조 */
 .markdown strong {
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--text-primary);
 }
 
 .markdown em {

@@ -1,10 +1,10 @@
 .main {
     min-height: 100vh;
-    background-color: #ffffff;
+    background-color: var(--bg-primary);
 }
 
 .content {
-    background-color: #ffffff;
+    background-color: var(--bg-primary);
     padding: var(--spacing-lg);
     /* 헤더가 없을 때: 100vh - footer 높이 */
     min-height: calc(100vh - var(--footer-height));

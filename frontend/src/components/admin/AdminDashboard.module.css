@@ -8,10 +8,10 @@
     margin-top: 0;
     margin-bottom: 24px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--border-color);
     font-size: 1.25rem; /* 20px */
     font-weight: 600;
-    color: #333;
+    color: var(--text-primary);
 }
 
 .statsGrid {
@@ -23,7 +23,7 @@
 
 .divider {
     border: none;
-    border-top: 1px solid #f0f0f0;
+    border-top: 1px solid var(--border-color);
     margin: 32px 0;
 }
 

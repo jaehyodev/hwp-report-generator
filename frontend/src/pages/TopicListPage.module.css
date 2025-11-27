@@ -1,6 +1,6 @@
 .topicListPage {
     height: var(--main-height);
-    background-color: #ffffff;
+    background-color: var(--bg-primary);
     transition: margin-left 0.3s ease-out;
 }
 
@@ -40,7 +40,7 @@
 
 /* Table Container */
 .tableContainer {
-    background-color: #ffffff;
+    background-color: var(--bg-primary);
     border: 1px solid #e5e5e5;
     border-radius: 0.5rem;
     overflow-x: auto;
@@ -173,7 +173,7 @@
 
 .pageBtn {
     padding: 0.5rem 1rem;
-    background-color: #ffffff;
+    background-color: var(--bg-primary);
     border: 1px solid #e5e5e5;
     border-radius: 0.375rem;
     color: #374151;
@@ -351,7 +351,7 @@
         left: 1rem;
         width: 2.5rem;
         height: 2.5rem;
-        background-color: #ffffff;
+        background-color: var(--bg-primary);
         border: 1px solid #e5e5e5;
         border-radius: 0.5rem;
         color: #666666;
@@ -412,7 +412,7 @@
     }
 
     .table tbody tr:hover {
-        background-color: #ffffff;
+        background-color: var(--bg-primary);
         border-color: #1976d2;
     }
 

@@ -74,8 +74,8 @@
     width: 30%;
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    color: #666;
-    background-color: #fafafa;
+    color: var(--text-primary);
+    background-color: var(--bg-elevated-primary);
 }
 
 .infoValue {
@@ -98,15 +98,15 @@
 
 /* ========== 안내 메시지 ========== */
 .notice {
-    background-color: #f5f5f5;
+    background-color: var(--bg-elevated-secondary);
     padding: var(--spacing-md);
     border-radius: var(--radius-md);
     font-size: var(--font-size-sm);
-    color: #666;
 }
 
 .noticeText {
     margin: 0;
+    color: var(--text-secondary);
 }
 
 /* ========== 프롬프트 입력 ========== */
@@ -115,7 +115,7 @@
     padding: var(--spacing-sm) var(--spacing-md);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    font-family: 'Courier New', monospace;
+    color: var(--text-inverted);
     font-size: var(--font-size-sm);
     line-height: 1.6;
     resize: vertical;

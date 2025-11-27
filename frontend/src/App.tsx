@@ -4,12 +4,12 @@
  * ⭐ 앱의 최상위 컴포넌트
  *
  * 역할:
- * 1. 전역 설정 (React Query, Ant Design, 인증 Context)
+ * 1. 전역 설정 (React Query, Ant Design, 인증 Context, 테마)
  * 2. 라우팅 설정 (URL별 페이지 매핑)
  *
  * 구조:
- * QueryClient: 서버 데이터 캐싱/관리
- *   → ConfigProvider: Ant Design 한글 설정
+ * ThemeProvider: 다크/라이트 테마 관리
+ *   → ConfigProvider: Ant Design 한글 설정 (테마는 ThemeProvider에서 관리)
  *     → AntdApp: Modal, message 같은 전역 컴포넌트 지원
  *       → AuthProvider: 로그인 사용자 정보 전역 관리
  *         → Router: URL 라우팅
@@ -18,8 +18,8 @@
 import React from 'react'
 import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom'
 import '@ant-design/v5-patch-for-react-19'
-import {ConfigProvider, App as AntdApp} from 'antd'
-import koKR from 'antd/locale/ko_KR'
+import {App as AntdApp} from 'antd'
+import {ThemeProvider} from './contexts/ThemeContext'
 import {AuthProvider} from './context/AuthContext'
 import PrivateRoute from './components/auth/PrivateRoute'
 import PublicRoute from './components/auth/PublicRoute'
@@ -34,8 +34,8 @@ import TemplateManagementPage from './pages/TemplateManagementPage'
 
 const App: React.FC = () => {
     return (
-        // Ant Design 한글 설정
-        <ConfigProvider locale={koKR}>
+        // 테마 Provider: 다크/라이트 테마 관리 (ConfigProvider 포함)
+        <ThemeProvider>
             {/* Ant Design App: Modal, message 같은 전역 컴포넌트 사용 가능하게 함 */}
             <AntdApp>
                 {/* 인증 Context: 로그인 사용자 정보를 앱 전체에서 사용 가능 */}
@@ -120,7 +120,7 @@ const App: React.FC = () => {
                         </Router>
                     </AuthProvider>
                 </AntdApp>
-            </ConfigProvider>
+            </ThemeProvider>
     )
 }
 

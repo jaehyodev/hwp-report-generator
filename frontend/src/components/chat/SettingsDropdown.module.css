@@ -5,7 +5,7 @@
     bottom: calc(100% + 0.5rem); /* 버튼 바로 위 */
     left: 0; /* 버튼의 좌측선과 맞춤 */
     min-width: 12rem;
-    background-color: #ffffff;
+    background-color: var(--bg-primary);
     border: 1px solid #e5e5e5;
     border-radius: 0.5rem;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);

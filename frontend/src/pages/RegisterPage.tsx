@@ -31,7 +31,7 @@ const RegisterPage: React.FC = () => {
             <Card className={styles.card}>
                 <div className={styles.header}>
                     <h1>HWP 보고서 자동 생성 시스템</h1>
-                    <p className={styles.subtitle}>회원가입</p>
+                    <h2 className={styles.subtitle}>회원가입</h2>
                 </div>
 
                 <Form name="register" onFinish={onFinish} autoComplete="off" layout="vertical">

@@ -19,7 +19,7 @@
 .uploader :global(.ant-upload-drag) {
     border: 2px dashed var(--border-color);
     border-radius: var(--radius-lg);
-    background-color: var(--color-background);
+    background-color: var(--bg-primary);
     transition: all 0.3s;
     padding: var(--spacing-lg) !important;
     min-height: 120px !important;
@@ -116,7 +116,7 @@
 .notice {
     margin-top: var(--spacing-lg);
     padding: var(--spacing-md);
-    background-color: var(--color-background);
+    background-color: var(--bg-primary);
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
 }

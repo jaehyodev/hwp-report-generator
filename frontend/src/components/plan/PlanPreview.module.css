@@ -60,7 +60,7 @@
 }
 
 .previewActionBtn:hover {
-    background-color: var(--color-background);
+    background-color: var(--bg-primary);
     color: var(--text-primary);
 }
 
@@ -79,7 +79,7 @@
 }
 
 .previewActionBtn.close:hover {
-    background-color: var(--color-background);
+    background-color: var(--bg-primary);
     color: var(--text-primary);
 }
 
@@ -95,7 +95,7 @@
     width: 100%;
     padding: var(--spacing-lg);
     border: none;
-    background-color: var(--color-background);
+    background-color: var(--bg-primary);
     font-size: var(--font-size-sm);
     line-height: 1.8;
     color: var(--text-primary);

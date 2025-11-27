@@ -80,7 +80,7 @@
 .messageSender {
     font-weight: 600;
     font-size: 0.75rem;
-    color: #1a1a1a;
+    color: var(--text-primary);
 }
 
 .messageTime {
@@ -135,15 +135,16 @@
 }
 
 .chatMessage.user .messageContent {
-    background-color: #e8f0fe;
+    background-color: var(--msg-bg);
 }
 
 .chatMessage.assistant .messageContent {
-    background-color: #f5f5f5;
+    background-color: var(--msg-bg);
 }
 
 .messageContent p {
     margin: 0 0 0.75rem 0;
+    color: var(--text-primary);
     word-wrap: break-word;
     overflow-wrap: break-word;
     word-break: break-word;
@@ -167,16 +168,16 @@
     align-items: center;
     gap: 0.75rem;
     padding: 0.875rem 1rem;
-    background-color: #f8f9fa;
-    border: 1px solid #e5e5e5;
+    background-color: var(--report-file-bg);
+    border: 1px solid var(--border-color);
     border-radius: 0.5rem;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .reportFile:hover {
-    background-color: #e8f0fe;
-    border-color: #1976d2;
+    background-color: var(--report-file-bg-hover);
+    border-color: var(--primary-hover);
 }
 
 .reportIcon {
@@ -192,7 +193,7 @@
 .reportFilename {
     font-size: 0.875rem;
     font-weight: 500;
-    color: #1a1a1a;
+    color: var(--text-primary);
     margin-bottom: 0.25rem;
     white-space: nowrap;
     overflow: hidden;

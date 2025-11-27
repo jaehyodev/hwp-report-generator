@@ -23,6 +23,10 @@
     margin-left: var(--sidebar-width);
 }
 
+.tempDescription {
+    color: var(--text-secondary);
+}
+
 /* Mobile (≤768px) */
 @media (max-width: 768px) {
     .adminContent.sidebarCollapsed,

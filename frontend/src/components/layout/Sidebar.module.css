@@ -7,13 +7,14 @@
     flex-direction: column;
     gap: var(--spacing-sm);
     overflow: hidden;
-    background-color: var(--color-white);
+    background-color: var(--bg-elevated-secondary);
     border-right: 1px solid var(--border-color);
     z-index: var(--z-sidebar);
     transition: width var(--transition-slow) ease-out;
 }
 .sidebar.collapsed {
     width: var(--sidebar-collapsed-width);
+    background-color: var(--bg-primary);
 }
 .sidebar.open {
     width: var(--sidebar-width);
@@ -29,7 +30,7 @@
     padding: var(--spacing-md) var(--spacing-sm) 0 var(--spacing-sm);
     display: flex;
     align-items: center;
-    background-color: #ffffff;
+    background-color: var(--bg-primary);
     pointer-events: auto;
     transition: opacity var(--transition-base) ease-out;
 }
@@ -43,7 +44,7 @@
     flex-direction: column;
     padding: var(--spacing-md) var(--spacing-sm);
     gap: var(--spacing-xl);
-    background-color: var(--color-background);
+    background-color: var(--bg-primary);
     pointer-events: auto;
     transition: opacity var(--transition-base) ease-out;
 }
@@ -87,13 +88,12 @@
     border: none;
     border-radius: var(--radius-lg);
     cursor: pointer;
-    color: var(--grey-hover);
+    color: var(--icon-btn-color);
     font-size: var(--font-size-lg);
     transition: all var(--transition-base) ease;
 }
 .iconBtn:hover {
-    background-color: var(--color-background-hover);
-    color: var(--text-secondary);
+    background-color: var(--bg-primary-hover);
 }
 
 .plusIcon {
@@ -110,9 +110,12 @@
     align-items: center;
     justify-content: center;
     background-color: var(--primary-color);
-    color: var(--color-white);
+    color: var(--text-primary);
     border-radius: 50%;
     font-size: var(--font-size-sm);
+}
+.plusCircle > span {
+    color: var(--color-white);
 }
 .iconBtn:hover .plusCircle {
     background-color: var(--primary-hover);
@@ -120,6 +123,8 @@
 .iconBtn:active .plusCircle {
     background-color: var(--primary-active);
 }
+
+
 
 .newTopicBtn {
     width: 100%;
@@ -138,7 +143,7 @@
     transition: all var(--transition-base) ease;
 }
 .newTopicBtn:hover {
-    background-color: var(--color-background-hover);
+    background-color: var(--bg-primary-hover);
 }
 
 .newTopicBtn .plusCircle {
@@ -148,7 +153,7 @@
     align-items: center;
     justify-content: center;
     background-color: var(--primary-color);
-    color: var(--color-white);
+    color: var(--text-primary);
     border-radius: 50%;
     font-size: var(--font-size-sm);
 }
@@ -173,7 +178,7 @@
     align-items: flex-start;
     gap: 0.75rem;
     padding: 0.75rem;
-    background-color: var(--color-white);
+    background-color: var(--bg-primary);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     cursor: pointer;
@@ -182,12 +187,12 @@
 }
 
 .topicItem:hover {
-    background-color: #f8f9fa;
-    border-color: #d0d0d0;
+    background-color: var(--bg-primary-hover);
+    border-color: var(--border-color);
 }
 
 .topicItem.selected {
-    background-color: #e8f0fe;
+    background-color: var(--menu-item-active);
     border-color: var(--primary-active);
 }
 
@@ -204,11 +209,6 @@
     font-size: var(--font-size-md);
 }
 
-.topicItem.selected .topicIcon {
-    background-color: var(--primary-active);
-    color: var(--color-white);
-}
-
 .topicInfo {
     flex: 1;
     min-width: 0;
@@ -217,7 +217,7 @@
 .topicTitle {
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
-    color: #1a1a1a;
+    color: var(--text-primary);
     margin-bottom: var(--spacing-xxs);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -340,7 +340,7 @@
     border: none;
     border-radius: var(--radius-lg);
     cursor: pointer;
-    color: #1a1a1a;
+    color: var(--text-primary);
     font-size: 0.875rem;
     font-weight: var(--font-weight-medium);
     transition: all 0.2s ease;
@@ -348,20 +348,16 @@
 }
 
 .menuItem:hover {
-    background-color: #f5f5f5;
+    background-color: var(--bg-primary-hover)
 }
 
 .menuItem > :first-child {
     font-size: 1rem;
-    color: #666666;
+    color: var(--text-primary);
     width: 2rem;
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.menuItem:hover > :first-child {
-    color: #1976d2;
 }
 
 /* Mobile: Overlay 방식 (768px 미만) */

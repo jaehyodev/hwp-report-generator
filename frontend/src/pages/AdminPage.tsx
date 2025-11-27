@@ -165,13 +165,13 @@ const AdminPage = () => {
 
                     {activeMenu === 'reports' && (
                         <Card title="보고서 관리">
-                            <p>보고서 관리 기능은 준비 중입니다.</p>
+                            <p className={styles.tempDescription}>보고서 관리 기능은 준비 중입니다.</p>
                         </Card>
                     )}
 
                     {activeMenu === 'settings' && (
                         <Card title="시스템 설정">
-                            <p>시스템 설정 기능은 준비 중입니다.</p>
+                            <p className={styles.tempDescription}>시스템 설정 기능은 준비 중입니다.</p>
                         </Card>
                     )}
                 </div>

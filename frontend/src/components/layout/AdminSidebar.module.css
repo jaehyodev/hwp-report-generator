@@ -6,7 +6,7 @@
     top: var(--header-height);
     width: var(--sidebar-width);
     height: calc(100vh - var(--header-height));
-    background-color: #ffffff;
+    background-color: var(--bg-elevated-secondary);
     border-right: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
@@ -19,6 +19,7 @@
 
 .adminSidebar.collapsed {
     width: var(--sidebar-collapsed-width);
+    background-color: var(--bg-primary);
 }
 
 /* Sidebar Header */
@@ -57,7 +58,7 @@
 }
 
 .toggleBtn:hover {
-    background-color: var(--color-background);
+    background-color: var(--bg-primary-hover);
     color: var(--primary-color);
 }
 
@@ -106,13 +107,12 @@
 }
 
 .menuItem:hover {
-    background-color: var(--color-background);
+    background-color: var(--bg-primary-hover);
     color: var(--primary-color);
 }
 
 .menuItem.active {
-    background-color: #e6f4ff;
-    color: var(--primary-color);
+    background-color: var(--menu-item-active);
 }
 
 .menuItem.active::before {
@@ -165,10 +165,6 @@
     color: var(--primary-hover);
 }
 
-.menuItem.active .menuDescription {
-    color: var(--primary-active);
-}
-
 /* Collapsed State */
 .collapsed .title {
     display: none;
@@ -187,56 +183,3 @@
     width: auto;
     height: auto;
 }
-/*
-@media (max-width: 1024px) {
-    .adminSidebar {
-        transform: translateX(-100%);
-    }
-
-    .adminSidebar.expanded {
-        transform: translateX(0);
-        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
-    }
-
-    .adminSidebar.collapsed {
-        transform: translateX(-100%);
-    }
-}
-
-@media (max-width: 768px) {
-    .adminSidebar {
-        width: 100%;
-        max-width: 20rem;
-        transform: translateX(-100%);
-    }
-
-    .adminSidebar.expanded {
-        transform: translateX(0);
-    }
-
-    .adminSidebar.collapsed {
-        width: var(--sidebar-collapsed-width);
-        transform: translateX(-100%);
-    }
-
-    .sidebarHeader {
-        padding: var(--spacing-sm);
-    }
-
-    .title {
-        font-size: var(--font-size-md);
-    }
-
-    .menuItem {
-        padding: var(--spacing-sm) var(--spacing-md);
-    }
-
-    .menuLabel {
-        font-size: var(--font-size-sm);
-    }
-
-    .menuDescription {
-        font-size: 0.625rem;
-    }
-}*/
-

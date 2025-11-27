@@ -1,3 +1,11 @@
+import React, {useEffect, useState} from 'react'
+import {Modal, Spin, message, Switch} from 'antd'
+import {UserOutlined, CloseOutlined, SettingOutlined} from '@ant-design/icons'
+import {authApi} from '../../services/authApi'
+import {useTheme} from '../../hooks/useTheme'
+import type {UserData} from '../../types/user'
+import styles from './SettingsModal.module.css'
+
 /**
  * SettingsModal.tsx
  *
@@ -5,13 +13,6 @@
  * - Sidebar: 내 정보 표시 (API 조회)
  * - AdminPage: 선택한 사용자 정보 표시 (테이블 데이터 전달)
  */
-
-import React, {useEffect, useState} from 'react'
-import {Modal, Spin, message, Switch} from 'antd'
-import {UserOutlined, CloseOutlined, SettingOutlined} from '@ant-design/icons'
-import {authApi} from '../../services/authApi'
-import type {UserData} from '../../types/user'
-import styles from './SettingsModal.module.css'
 
 interface SettingsModalProps {
     /** null이면 내 정보 조회 (API), UserData 전달 시 해당 데이터 표시 */
@@ -26,7 +27,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({user, isOpen, onClose}) =>
     const [userData, setUserData] = useState<UserData | null>(user)
     const [loading, setLoading] = useState(false)
     const [activeTab, setActiveTab] = useState<TabType>('general')
-    const [isDarkMode, setIsDarkMode] = useState(false) // UI only, no functionality
+    const {theme, toggleTheme} = useTheme()
 
     // user가 null이면 내 정보 조회 (API)
     useEffect(() => {
@@ -108,7 +109,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({user, isOpen, onClose}) =>
                                 {/* Dark Mode Row */}
                                 <div className={styles.settingRow}>
                                     <span className={styles.settingLabel}>다크 모드</span>
-                                    <Switch checked={isDarkMode} onChange={setIsDarkMode} />
+                                    <Switch
+                                        checked={theme === 'dark'}
+                                        onChange={toggleTheme}
+                                        checkedChildren="다크"
+                                        unCheckedChildren="라이트"
+                                    />
                                 </div>
                             </div>
                         )}
