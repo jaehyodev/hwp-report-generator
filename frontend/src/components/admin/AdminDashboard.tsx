@@ -1,8 +1,10 @@
 // src/components/admin/AdminDashboard.tsx
 
-import {Card, Button, Table, Statistic} from 'antd'
-import {ReloadOutlined} from '@ant-design/icons'
+import {useState} from 'react'
+import {Card, Button, Table, Statistic, DatePicker} from 'antd'
+import {ReloadOutlined, SearchOutlined} from '@ant-design/icons'
 import type {ColumnsType} from 'antd/es/table'
+import type {Dayjs} from 'dayjs'
 // ✨ 훅 이름과 import 경로를 useTokenUsage로 변경합니다.
 import {useTokenUsage} from '@/hooks/useTokenUsage'
 import type {TokenUsageUI} from '@/models/ui/TokenUsageUI' // TokenUsageUI 타입을 가져옵니다.
@@ -75,6 +77,14 @@ const userUsageColumns: ColumnsType<TokenUsageUI> = [
 ]
 
 const AdminDashboard = () => {
+    // 날짜 범위 상태 (전체 토큰 사용 현황용)
+    const [totalStartDate, setTotalStartDate] = useState<Dayjs | null>(null)
+    const [totalEndDate, setTotalEndDate] = useState<Dayjs | null>(null)
+
+    // 날짜 범위 상태 (사용자별 토큰 사용량용)
+    const [userStartDate, setUserStartDate] = useState<Dayjs | null>(null)
+    const [userEndDate, setUserEndDate] = useState<Dayjs | null>(null)
+
     // ✨ useTokenUsage 훅으로 변경하고, 분리된 상태를 가져옵니다.
     const {
         totalTokenUsage,
@@ -90,6 +100,22 @@ const AdminDashboard = () => {
     const isDashboardLoading = isTotalUsageLoading || isUserUsageLoading
     const dashboardError = totalUsageError || userUsageError
 
+    // 전체 토큰 사용 현황 검색 핸들러 (UI만 구현)
+    const handleTotalSearch = () => {
+        console.log('전체 토큰 검색:', {
+            startDate: totalStartDate?.format('YYYY-MM-DD'),
+            endDate: totalEndDate?.format('YYYY-MM-DD')
+        })
+    }
+
+    // 사용자별 토큰 사용량 검색 핸들러 (UI만 구현)
+    const handleUserSearch = () => {
+        console.log('사용자별 토큰 검색:', {
+            startDate: userStartDate?.format('YYYY-MM-DD'),
+            endDate: userEndDate?.format('YYYY-MM-DD')
+        })
+    }
+
     return (
         <div>
             <Card
@@ -102,7 +128,32 @@ const AdminDashboard = () => {
                 className={styles.dashboardCard}
             >
                 {/* 1. 전체 토큰 사용량 조회 */}
-                <h2 className={styles.sectionTitle}>전체 토큰 사용 현황</h2>
+                <div className={styles.sectionHeader}>
+                    <h2 className={styles.sectionTitle}>전체 토큰 사용 현황</h2>
+                    <div className={styles.dateRangeFilter}>
+                        <DatePicker
+                            placeholder="시작일"
+                            value={totalStartDate}
+                            onChange={setTotalStartDate}
+                            className={styles.datePicker}
+                        />
+                        <span className={styles.dateSeparator}>~</span>
+                        <DatePicker
+                            placeholder="종료일"
+                            value={totalEndDate}
+                            onChange={setTotalEndDate}
+                            className={styles.datePicker}
+                        />
+                        <Button
+                            type="primary"
+                            icon={<SearchOutlined />}
+                            onClick={handleTotalSearch}
+                            className={styles.searchButton}
+                        >
+                            검색
+                        </Button>
+                    </div>
+                </div>
                 {isTotalUsageLoading && <p>전체 토큰 사용량 조회 중...</p>}
                 {totalUsageError && <p style={{color: 'red'}}>{totalUsageError}</p>}
                 {!isTotalUsageLoading && !totalUsageError && totalTokenUsage && (
@@ -149,7 +200,32 @@ const AdminDashboard = () => {
                 <hr className={styles.divider} />
 
                 {/* 2. 사용자별 토큰 사용량 조회 테이블 */}
-                <h2 className={styles.sectionTitle}>사용자별 토큰 사용량</h2>
+                <div className={styles.sectionHeader}>
+                    <h2 className={styles.sectionTitle}>사용자별 토큰 사용량</h2>
+                    <div className={styles.dateRangeFilter}>
+                        <DatePicker
+                            placeholder="시작일"
+                            value={userStartDate}
+                            onChange={setUserStartDate}
+                            className={styles.datePicker}
+                        />
+                        <span className={styles.dateSeparator}>~</span>
+                        <DatePicker
+                            placeholder="종료일"
+                            value={userEndDate}
+                            onChange={setUserEndDate}
+                            className={styles.datePicker}
+                        />
+                        <Button
+                            type="primary"
+                            icon={<SearchOutlined />}
+                            onClick={handleUserSearch}
+                            className={styles.searchButton}
+                        >
+                            검색
+                        </Button>
+                    </div>
+                </div>
                 {userUsageError && <p style={{color: 'red'}}>{userUsageError}</p>}
 
                 <Table

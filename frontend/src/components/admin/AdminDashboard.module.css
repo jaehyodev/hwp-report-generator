@@ -4,14 +4,42 @@
     box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
 }
 
-.sectionTitle {
-    margin-top: 0;
-    margin-bottom: 24px;
-    padding-bottom: 8px;
+.sectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-lg);
+    padding-bottom: var(--spacing-sm);
     border-bottom: 1px solid var(--border-color);
-    font-size: 1.25rem; /* 20px */
-    font-weight: 600;
+    flex-wrap: wrap;
+    gap: var(--spacing-md);
+}
+
+.sectionTitle {
+    margin: 0;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
+}
+
+.dateRangeFilter {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+}
+
+.datePicker {
+    width: 140px;
+}
+
+.dateSeparator {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.searchButton {
+    margin-left: var(--spacing-xs);
 }
 
 .statsGrid {
