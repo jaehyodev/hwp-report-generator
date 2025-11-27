@@ -6,7 +6,7 @@ A topic represents a conversation thread about a specific report subject.
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
-from shared.types.enums import TopicStatus
+from shared.types.enums import TopicStatus, TopicSourceType
 
 
 class TopicCreate(BaseModel):
@@ -18,12 +18,14 @@ class TopicCreate(BaseModel):
         template_id: Optional template ID to use for dynamic system prompt generation
         prompt_user: Optional first step API response converted to markdown (from sequential_planning)
         prompt_system: Optional markdown rules for planning (from sequential_planning)
+        source_type: Source type of the topic (template or basic) - REQUIRED
     """
     input_prompt: str = Field(..., min_length=1, max_length=1000, description="Report topic input")
     language: str = Field(default="ko", description="Primary language (ko/en)")
     template_id: Optional[int] = Field(default=None, description="Template ID for dynamic system prompt generation")
     prompt_user: Optional[str] = Field(default=None, description="First step API response converted to markdown (sequential_planning)")
     prompt_system: Optional[str] = Field(default=None, description="Markdown rules for planning (sequential_planning)")
+    source_type: TopicSourceType = Field(..., description="Source type (template or basic)")
 
 
 class TopicUpdate(BaseModel):
@@ -50,6 +52,7 @@ class Topic(BaseModel):
         template_id: Optional template ID used for this topic
         prompt_user: Optional first step API response converted to markdown (from sequential_planning)
         prompt_system: Optional markdown rules for planning (from sequential_planning)
+        source_type: Source type (template or basic) - IMMUTABLE
         created_at: Creation timestamp
         updated_at: Last update timestamp
     """
@@ -62,6 +65,7 @@ class Topic(BaseModel):
     template_id: Optional[int] = None
     prompt_user: Optional[str] = None
     prompt_system: Optional[str] = None
+    source_type: TopicSourceType = TopicSourceType.BASIC
     created_at: datetime
     updated_at: datetime
 

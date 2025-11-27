@@ -190,7 +190,7 @@ async def _two_step_planning(
     ],
     "estimated_word_count": 5000,
     "estimated_sections_count": 5
-}}
+}}prompt_fields
 
 응답은 반드시 유효한 JSON만 포함하세요. Markdown 형식이나 추가 설명은 불가합니다.
 """
@@ -439,7 +439,6 @@ def _build_text_plan(plan_json: Dict[str, Any]) -> str:
 
     return "\n".join(lines)
 
-
 def _extract_prompt_fields(first_response_json: Dict[str, Any]) -> Dict[str, Any]:
     """
     Role/Context/Task 및 감정적 니즈 필드 추출 및 기본값 제공
@@ -466,9 +465,9 @@ def _extract_prompt_fields(first_response_json: Dict[str, Any]) -> Dict[str, Any
         emotional_needs_raw = {}
 
     emotional_needs = {
-        "formality": emotional_needs_raw.get("formality", "professional"),
-        "confidence_level": emotional_needs_raw.get("confidence_level", "medium"),
-        "decision_focus": emotional_needs_raw.get("decision_focus", "strategic")
+        "formality": emotional_needs_raw.get("formality"),
+        "confidence_level": emotional_needs_raw.get("confidence_level"),
+        "decision_focus": emotional_needs_raw.get("decision_focus")
     }
 
     role = (
@@ -483,11 +482,8 @@ def _extract_prompt_fields(first_response_json: Dict[str, Any]) -> Dict[str, Any
         or first_response_json.get("framework")
     )
 
-    output_structure = (
-        restructured.get("output_structure")
-        or first_response_json.get("context")
-        or first_response_json.get("framework")
-    )
+    # output_format json 형태의 string 으로 파싱
+    output_format = first_response_json.get("output_format", {})
 
     task = (
         restructured.get("task")
@@ -511,7 +507,7 @@ def _extract_prompt_fields(first_response_json: Dict[str, Any]) -> Dict[str, Any
         "underlying_purpose": underlying_purpose,
         "role": role,
         "context": context,
-        "output_structure": output_structure,
+        "output_format": output_format,
         "task": task
     }
 

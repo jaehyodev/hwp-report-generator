@@ -7,7 +7,7 @@ from typing import Optional, List, Tuple
 from datetime import datetime
 from .connection import get_db_connection
 from app.models.topic import Topic, TopicCreate, TopicUpdate
-from shared.types.enums import TopicStatus
+from shared.types.enums import TopicStatus, TopicSourceType
 
 
 class TopicDB:
@@ -36,11 +36,21 @@ class TopicDB:
         now = datetime.now()
         cursor.execute(
             """
-            INSERT INTO topics (user_id, input_prompt, language, status, template_id, prompt_user, prompt_system, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO topics (user_id, input_prompt, language, status, template_id, prompt_user, prompt_system, source_type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, topic_data.input_prompt, topic_data.language,
-             TopicStatus.ACTIVE.value, topic_data.template_id, topic_data.prompt_user, topic_data.prompt_system, now, now)
+            (
+                user_id,
+                topic_data.input_prompt,
+                topic_data.language,
+                TopicStatus.ACTIVE.value,
+                topic_data.template_id,
+                topic_data.prompt_user,
+                topic_data.prompt_system,
+                topic_data.source_type.value,
+                now,
+                now
+            )
         )
 
         conn.commit()
@@ -241,6 +251,7 @@ class TopicDB:
             template_id=row["template_id"],
             prompt_user=prompt_user,
             prompt_system=prompt_system,
+            source_type=TopicSourceType(row["source_type"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"])
         )

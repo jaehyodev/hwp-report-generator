@@ -54,3 +54,18 @@ class TransformOperation(str, Enum):
     """
     CONVERT = "convert"
     TRANSLATE = "translate"
+
+
+class TopicSourceType(str, Enum):
+    """Source type of a topic/conversation.
+
+    Determines how the topic is processed and which prompts are used:
+    - TEMPLATE: Template-based workflow (requires template_id)
+    - BASIC: Basic/optimization-based workflow (uses prompt optimization or default prompts)
+
+    Attributes:
+        TEMPLATE: Template-based report generation
+        BASIC: Basic/optimization-based report generation
+    """
+    TEMPLATE = "template"
+    BASIC = "basic"

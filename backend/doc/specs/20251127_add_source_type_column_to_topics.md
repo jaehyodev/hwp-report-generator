@@ -498,11 +498,31 @@ if topic.source_type == TopicSourceType.TEMPLATE and not topic.template_id:
 ### 시나리오 4: Generate API에서 source_type='basic'이고 template_id=null
 **상황**: /api/topics/{topic_id}/generate 호출 시 source_type='basic'이고 template_id=null
 **처리**:
-- 정상 플로우: template_id 검증 스킵
-- 기본 프롬프트(FINANCIAL_REPORT_SYSTEM_PROMPT) 사용
-- 보고서 생성 진행
+```python
+# routers/topics.py의 generate_report_background()에서
+topic = TopicDB.get_topic_by_id(topic_id)
+
+if topic.source_type == TopicSourceType.BASIC and not topic.template_id:
+    # prompt_optimization_result 활용
+    optimization_record = PromptOptimizationDB.get_latest_by_topic_id(topic_id)
+
+    if optimization_record:
+        # 고도화된 프롬프트 사용 (role, context, task 조합)
+        system_prompt = _build_system_prompt_from_optimization(
+            role=optimization_record['role'],
+            context=optimization_record['context'],
+            task=optimization_record['task']
+        )
+    else:
+        # 기본 프롬프트 사용
+        system_prompt = FINANCIAL_REPORT_SYSTEM_PROMPT
+```
 
 **결과**: 202 Accepted (정상 진행)
+- 프롬프트 우선순위:
+  1. prompt_optimization 결과 (source_type='basic'일 때)
+  2. 기본 프롬프트 (FINANCIAL_REPORT_SYSTEM_PROMPT)
+  3. 템플릿 프롬프트 (source_type='template'일 때)
 
 ---
 
@@ -630,10 +650,14 @@ if topic.source_type == TopicSourceType.TEMPLATE and not topic.template_id:
 - [ ] TC-003~TC-009 테스트 통과 확인
 
 #### 1-7. API 로직 - /api/topics/{topic_id}/generate
-- [ ] backend/app/routers/topics.py: generate_report_background()에서 source_type 기반 검증 추가
+- [ ] backend/app/routers/topics.py: generate_report_background()에서 source_type 기반 검증 및 프롬프트 결정 추가
   ```python
+  from app.database.prompt_optimization_db import PromptOptimizationDB
+  from shared.types.enums import TopicSourceType
+
   topic = TopicDB.get_topic_by_id(topic_id)
 
+  # Step 1: 조건부 template_id 검증
   if topic.source_type == TopicSourceType.TEMPLATE:
       # template_id 필수
       if not topic.template_id:
@@ -644,9 +668,38 @@ if topic.source_type == TopicSourceType.TEMPLATE and not topic.template_id:
           )
       template_id = topic.template_id
   else:  # BASIC
-      # template_id 선택사항
-      template_id = topic.template_id  # null 가능
+      # template_id 선택사항 (null 허용)
+      template_id = topic.template_id
+
+  # Step 2: 프롬프트 결정 (source_type 기반)
+  system_prompt = None
+
+  if topic.source_type == TopicSourceType.TEMPLATE:
+      # 템플릿 프롬프트
+      template = TemplateDB.get_template_by_id(template_id, topic.user_id)
+      system_prompt = template.prompt_system
+  elif topic.source_type == TopicSourceType.BASIC:
+      if template_id:
+          # Basic이지만 template_id 있으면 템플릿 사용 (호환성)
+          template = TemplateDB.get_template_by_id(template_id, topic.user_id)
+          system_prompt = template.prompt_system
+      else:
+          # template_id 없으면 prompt_optimization 활용
+          optimization = PromptOptimizationDB.get_latest_by_topic_id(topic_id)
+          if optimization:
+              # 고도화된 프롬프트 사용
+              system_prompt = _build_system_prompt_from_optimization(
+                  role=optimization['role'],
+                  context=optimization['context'],
+                  task=optimization['task']
+              )
+          else:
+              # 기본 프롬프트
+              system_prompt = FINANCIAL_REPORT_SYSTEM_PROMPT
+
+  # system_prompt를 _background_generate_report()에 전달
   ```
+- [ ] _build_system_prompt_from_optimization() 헬퍼 함수 구현 (role + context + task 조합)
 - [ ] TC-010~TC-014 테스트 통과 확인
 - [ ] 기존 template_id null 검증 로직 변경 (조건부로 변경)
 
@@ -722,24 +775,47 @@ else:  # BASIC
 
 ---
 
-## 10. 최종 확인 사항
+## 10. 최종 확인 사항 - 프롬프트 우선순위
 
-구현 시 다음을 확인해주세요:
+구현 시 다음 프롬프트 우선순위를 따르세요:
 
-1. **기존 /api/topics/{topic_id}/generate 로직 변경**
-   - 현재: `if not topic.template_id` → 에러
-   - 변경: 조건부 검증 (source_type 확인)
-   - 기존 테스트가 source_type='template' 가정 시 호환성 유지
+### source_type='template'인 경우
+```python
+# 템플릿 기반 프롬프트 사용
+template = TemplateDB.get_template_by_id(topic.template_id, topic.user_id)
+system_prompt = template.prompt_system
+```
 
-2. **새로운 기본 프롬프트 처리**
-   - source_type='basic'일 때 template_id=null
-   - 기본 프롬프트(FINANCIAL_REPORT_SYSTEM_PROMPT) 사용
-   - 현재 코드에서 이 부분 확인 필요
+### source_type='basic'이고 template_id=null인 경우
+```python
+# 우선순위
+1. prompt_optimization 결과 사용
+   optimization = PromptOptimizationDB.get_latest_by_topic_id(topic_id)
+   if optimization:
+       system_prompt = 조합(role + context + task)
+   else:
+       system_prompt = FINANCIAL_REPORT_SYSTEM_PROMPT
 
-3. **에러 메시지 일관성**
-   - source_type='template'이지만 template_id 없을 때
-   - 기존 메시지: "이 토픽에는 템플릿이 지정되어 있지 않습니다."
-   - 변경 없음 (일관성 유지)
+2. 기본 프롬프트 사용 (optimization 없을 때)
+   system_prompt = FINANCIAL_REPORT_SYSTEM_PROMPT
+```
+
+### source_type='basic'이지만 template_id가 있는 경우
+```python
+# 호환성: 사용자가 template_id 제공했으므로 템플릿 사용
+template = TemplateDB.get_template_by_id(topic.template_id, topic.user_id)
+system_prompt = template.prompt_system
+```
+
+### 최종 프롬프트 결정 로직
+
+| source_type | template_id | optimization 유무 | 사용 프롬프트 |
+|-------------|------------|------------------|------------|
+| template | 있음 | 무관 | 템플릿 프롬프트 |
+| template | 없음 | 무관 | ❌ 에러 (400) |
+| basic | 있음 | 무관 | 템플릿 프롬프트 (호환성) |
+| basic | 없음 | 있음 | prompt_optimization 프롬프트 |
+| basic | 없음 | 없음 | 기본 프롬프트 (FINANCIAL_REPORT_SYSTEM_PROMPT) |
 
 ---
 
@@ -785,13 +861,23 @@ class Topic(BaseModel):
 
 ## 상태 요약
 
-✅ **Unit Spec v1.1 완성**
-- 사용자 피드백 5가지 모두 반영
-- 추가 영향도(source_type 기반 조건부 검증) 반영
-- 14개 테스트 케이스 정의
-- 구현 체크리스트 작성
+✅ **Unit Spec v1.2 최종 완성**
+- 사용자 피드백 5가지 모두 반영 ✅
+  - source_type 자동 결정 로직
+  - TopicCreate 필수 필드
+  - 불변 필드 설정
+  - 마이그레이션 전략
+  - 엔드포인트 확인
+- 추가 영향도(source_type 기반 조건부 검증) 반영 ✅
+- 프롬프트 우선순위 체계 정의 ✅
+  - source_type='template' → 템플릿 프롬프트
+  - source_type='basic' + template_id 있음 → 템플릿 프롬프트 (호환성)
+  - source_type='basic' + template_id 없음 → prompt_optimization 또는 기본 프롬프트
+- 14개 테스트 케이스 정의 ✅
+- 구현 체크리스트 작성 ✅
+- 프롬프트 결정 로직 표 작성 ✅
 
-🔄 **다음 단계**: 사용자 최종 승인 대기
-- Spec 검토 확인
-- 문제 없으면 "좋습니다. 구현하세요." 신호
-- Step 1 구현 시작
+🎯 **준비 완료**: Spec 최종 검토 후 구현 시작
+- Spec 최종 검토
+- 문제 없으면 "좋습니다. 구현하세요." 신호 대기
+- Step 1 (구현) 시작

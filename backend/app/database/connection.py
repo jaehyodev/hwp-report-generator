@@ -211,6 +211,14 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # 컬럼이 이미 존재하면 무시
 
+    # Topics 테이블 마이그레이션: source_type 컬럼 추가 (v2.8 Topic Source Type)
+    try:
+        cursor.execute("""
+            ALTER TABLE topics ADD COLUMN source_type TEXT NOT NULL DEFAULT 'basic'
+        """)
+    except sqlite3.OperationalError:
+        pass  # 컬럼이 이미 존재하면 무시
+
     # Artifacts 테이블 마이그레이션: 상태 관리 컬럼 추가 (v2.5, Option A)
     try:
         cursor.execute("""

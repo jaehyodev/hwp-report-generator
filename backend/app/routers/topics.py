@@ -31,7 +31,7 @@ from app.database.ai_usage_db import AiUsageDB
 from app.database.prompt_optimization_db import PromptOptimizationDB
 from app.utils.auth import get_current_active_user
 from app.utils.response_helper import success_response, error_response, ErrorCode
-from shared.types.enums import TopicStatus, MessageRole, ArtifactKind
+from shared.types.enums import TopicStatus, MessageRole, ArtifactKind, TopicSourceType
 from app.utils.markdown_builder import build_report_md
 from app.utils.file_utils import next_artifact_version, build_artifact_paths, write_text, sha256_of
 from app.utils.claude_client import ClaudeClient
@@ -1077,12 +1077,15 @@ async def plan_report(
         if request.is_template_used:
             p_template_id = request.template_id
         else:
-            p_template_id = None  # 템플릿 미사용 시 None으로 설정   
+            p_template_id = None  # 템플릿 미사용 시 None으로 설정
+
+        source_type = TopicSourceType.TEMPLATE if request.is_template_used else TopicSourceType.BASIC
 
         topic_data = TopicCreate(
-                input_prompt=request.topic,
-                template_id=p_template_id
-            ) 
+            input_prompt=request.topic,
+            template_id=p_template_id if request.is_template_used else None,
+            source_type=source_type
+        ) 
         
         topic = TopicDB.create_topic(current_user.id, topic_data)
         logger.info(f"[PLAN] Topic created - topic_id={topic.id}")
@@ -1153,15 +1156,17 @@ async def plan_report(
                 if opt_result is None:
                     logger.warning(f"[PLAN] PromptOptimization result not found - topic_id={topic.id}")
                     prompt_user = None
+                    prompt_system = None
                 else:
                     prompt_user = opt_result.get('user_prompt')
+                    prompt_system = opt_result.get('output_format')
 
-                # 3-2. prompt_user만 저장 (prompt_system=None)
+                # 3-2. prompt_user, prompt_system (output_format) 저장
                 try:
                     TopicDB.update_topic_prompts(
                         topic.id,
                         prompt_user,
-                        prompt_system=None
+                        prompt_system
                     )
                 except Exception as e:
                     logger.warning(f"[PLAN] Update topic prompts failed (non-blocking) - topic_id={topic.id}, error={str(e)}")
@@ -1259,8 +1264,8 @@ async def generate_report_background(
                 message="이 토픽에 접근할 권한이 없습니다."
             )
 
-        if not topic.template_id:
-            logger.warning(f"[GENERATE] Template missing on topic - topic_id={topic_id}")
+        if topic.source_type == TopicSourceType.TEMPLATE and not topic.template_id:
+            logger.warning(f"[GENERATE] Template missing on template-based topic - topic_id={topic_id}")
             return error_response(
                 code=ErrorCode.TEMPLATE_NOT_FOUND,
                 http_status=404,
@@ -1925,7 +1930,7 @@ async def _background_generate_report(
         markdown = await asyncio.to_thread(
             claude.generate_report,
             topic=topic,
-            user_prompt=user_prompt,
+            plan_text=user_prompt,
             system_prompt=system_prompt,
             isWebSearch=is_web_search
         )
