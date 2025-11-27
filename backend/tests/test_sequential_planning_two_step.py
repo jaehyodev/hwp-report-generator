@@ -20,6 +20,7 @@ from app.utils.sequential_planning import (
     sequential_planning,
     SequentialPlanningError,
     _build_prompt_user_from_first_response,
+    _extract_prompt_fields,
 )
 
 
@@ -83,12 +84,21 @@ class TestTwoStepAPICalls:
 
         # API 호출 2회 확인
         assert mock_call.call_count == 2
+        # 두 번째 호출의 system_prompt에 role/context가 포함되는지 확인
+        _, second_kwargs = mock_call.call_args_list[1]
+        assert "system_prompt" in second_kwargs
+        assert "Financial Analyst" in second_kwargs["system_prompt"]
+        assert "Top-down" in second_kwargs["system_prompt"]
 
         # 반환값 검증
         assert "plan" in result
         assert "sections" in result
         assert "prompt_user" in result
         assert "prompt_system" in result
+        assert "Financial Analyst" in result["prompt_user"]
+        assert "Top-down" in result["prompt_user"]
+        assert "Financial Analyst" in result["prompt_system"]
+        assert "Top-down" in result["prompt_system"]
 
     @pytest.mark.asyncio
     @patch("app.utils.sequential_planning._call_sequential_planning")
@@ -117,61 +127,30 @@ class TestTwoStepAPICalls:
         assert "plan" in result
         assert "sections" in result
 
-
-class TestMarkdownConversion:
-    """JSON → 마크다운 변환 테스트"""
-
-    def test_markdown_conversion(self):
-        """TC-FUNC-005: JSON → 마크다운 변환"""
-        first_response = {
-            "selected_role": "Financial Analyst",
-            "framework": "Top-down Macro Analysis",
+    @pytest.mark.asyncio
+    @patch("app.utils.sequential_planning._call_sequential_planning")
+    async def test_two_step_missing_role_context_task_uses_defaults(self, mock_call):
+        """role/context/task 누락 시 기본값으로 prompt_user/system을 구성"""
+        first_response = json.dumps({
             "sections": [
-                {
-                    "title": "배경",
-                    "description": "금융 분석 배경",
-                    "key_points": ["포인트1", "포인트2"],
-                    "order": 1
-                }
+                {"title": "A", "description": "desc", "key_points": [], "order": 1}
             ]
-        }
+        })
+        second_response = json.dumps({
+            "title": "계획",
+            "sections": []
+        })
 
-        result = _build_prompt_user_from_first_response(first_response)
+        mock_call.side_effect = [first_response, second_response]
 
-        assert isinstance(result, str)
-        assert "선택된 역할" in result
-        assert "Financial Analyst" in result
-        assert "프레임워크" in result
-        assert "Top-down Macro Analysis" in result
+        result = await sequential_planning(topic="AI", is_template_used=False)
 
-    def test_markdown_conversion_includes_sections(self):
-        """마크다운 변환 시 섹션 포함 확인"""
-        first_response = {
-            "selected_role": "Technical Architect",
-            "framework": "System Design",
-            "sections": [
-                {
-                    "title": "아키텍처",
-                    "description": "시스템 아키텍처 설명",
-                    "key_points": ["스케일", "안정성"],
-                    "order": 1
-                },
-                {
-                    "title": "구현",
-                    "description": "구현 방안",
-                    "key_points": ["모듈화"],
-                    "order": 2
-                }
-            ]
-        }
+        assert "전문가" in result["prompt_user"]
+        assert "맥락 정보가 제공되지 않았습니다." in result["prompt_user"]
+        assert "보고서 계획을 작성하세요" in result["prompt_user"]
+        assert "전문가" in result["prompt_system"]
+        assert "맥락 정보가 제공되지 않았습니다." in result["prompt_system"]
 
-        result = _build_prompt_user_from_first_response(first_response)
-
-        assert "섹션 1" in result
-        assert "아키텍처" in result
-        assert "섹션 2" in result
-        assert "구현" in result
-        assert "스케일" in result
 
 
 class TestPromptSystemReturned:
@@ -197,7 +176,54 @@ class TestPromptSystemReturned:
         result = await sequential_planning(topic="AI", is_template_used=False)
 
         assert "prompt_system" in result
-        assert result["prompt_system"] == get_plan_markdown_rules()
+        assert "전문가" in result["prompt_system"]
+        assert "맥락 정보가 제공되지 않았습니다." in result["prompt_system"]
+        assert get_plan_markdown_rules() in result["prompt_system"]
+
+
+class TestPromptFieldExtraction:
+    """restructured_prompt JSON 매핑 테스트"""
+
+    def test_extract_prompt_fields_from_restructured_prompt(self):
+        """새 JSON 스키마(restructured_prompt/analysis)에서 role/context/task 추출"""
+        first_response = {
+            "analysis": {
+                "hidden_intent": "의도",
+                "primary_purpose": "목적"
+            },
+            "restructured_prompt": {
+                "role": "시장 분석 전문가",
+                "context": "급변하는 AI 시장",
+                "task": "시장 분석 단계별 수행",
+                "why": "비즈니스 전략 수립"
+            }
+        }
+
+        fields = _extract_prompt_fields(first_response)
+
+        assert fields["role"] == "시장 분석 전문가"
+        assert fields["context"] == "급변하는 AI 시장"
+        assert fields["task"] == "시장 분석 단계별 수행"
+
+    def test_extract_prompt_fields_fallback_to_analysis_when_context_missing(self):
+        """context가 비어 있을 때 analysis 정보를 사용해 보강"""
+        first_response = {
+            "analysis": {
+                "hidden_intent": "시장 현황 파악",
+                "primary_purpose": "투자 판단"
+            },
+            "restructured_prompt": {
+                "role": "시장 분석 전문가",
+                "task": "시장 분석 단계별 수행"
+            }
+        }
+
+        fields = _extract_prompt_fields(first_response)
+
+        assert "시장 현황 파악" in fields["context"]
+        assert "투자 판단" in fields["context"]
+        assert fields["role"] == "시장 분석 전문가"
+        assert fields["task"] == "시장 분석 단계별 수행"
 
     @pytest.mark.asyncio
     @patch("app.utils.sequential_planning._call_sequential_planning")

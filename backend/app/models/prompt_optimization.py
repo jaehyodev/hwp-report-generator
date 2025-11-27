@@ -43,6 +43,10 @@ class PromptOptimizationCreate(BaseModel):
     model_name: str = Field(default="claude-sonnet-4-5-20250929", description="사용된 Claude 모델명")
     # 처리 지연 시간 (밀리초)
     latency_ms: int = Field(default=0, description="Claude 호출 지연 시간 (ms)")
+    # Claude 응답 구조 정보
+    output_format: Optional[str] = Field(None, description="Claude 응답 구조 정보 (list, structured, etc.)")
+    # 사용자 원본 input topic
+    original_topic: Optional[str] = Field(None, description="사용자 원본 입력 주제")
 
 
 class PromptOptimizationResponse(BaseModel):
@@ -95,6 +99,10 @@ class PromptOptimizationResponse(BaseModel):
     created_at: datetime = Field(..., description="생성 날짜")
     # 마지막 수정 일시
     updated_at: datetime = Field(..., description="수정 날짜")
+    # Claude 응답 구조 정보
+    output_format: Optional[str] = Field(None, description="Claude 응답 구조 정보 (list, structured, etc.)")
+    # 사용자 원본 input topic
+    original_topic: Optional[str] = Field(None, description="사용자 원본 입력 주제")
 
 
 class PromptOptimizationUpdate(BaseModel):

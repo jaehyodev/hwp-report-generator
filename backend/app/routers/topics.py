@@ -1074,18 +1074,16 @@ async def plan_report(
     try:
         logger.info(f"[PLAN] Started - topic='{request.topic}', template_id={request.template_id}, is_template_used={request.is_template_used}, user_id={current_user.id}")
 
-        # Step 1. Sequential Planning 전에 Topic을 생성해 topic_id를 확보한다.
         if request.is_template_used:
-            topic_data = TopicCreate(
-                input_prompt=request.topic,
-                template_id=request.template_id
-            )
+            p_template_id = request.template_id
         else:
-            # is_template_used=False 여도 초기 생성은 동일하게 진행 (추후 plan_result 반영)
-            topic_data = TopicCreate(
+            p_template_id = None  # 템플릿 미사용 시 None으로 설정   
+
+        topic_data = TopicCreate(
                 input_prompt=request.topic,
-                template_id=request.template_id
-            )
+                template_id=p_template_id
+            ) 
+        
         topic = TopicDB.create_topic(current_user.id, topic_data)
         logger.info(f"[PLAN] Topic created - topic_id={topic.id}")
 
@@ -1106,15 +1104,16 @@ async def plan_report(
             raise
 
         # Step 3. 템플릿 미사용 케이스는 plan_result 기반 프롬프트를 Topic에 반영
-        if request.is_template_used:
-            # 템플릿 기반 플로우는 추가 프롬프트 저장이 필요 없음
-            pass
-        else:
-            TopicDB.update_topic_prompts(
-                topic.id,
-                plan_result.get("prompt_user"),
-                plan_result.get("prompt_system")
-            )
+        # 템플릿 기반 플로우는 프롬프트가 고정되어 있으므로 저장 불필요
+        # if request.is_template_used:
+        #     # 템플릿 기반 플로우는 추가 프롬프트 저장이 필요 없음
+        #     pass
+        # else:
+        #     TopicDB.update_topic_prompts(
+        #         topic.id,
+        #         plan_result.get("prompt_user"),
+        #         plan_result.get("prompt_system")
+        #     )
 
         elapsed = time.time() - start_time
         logger.info(f"[PLAN] Completed - topic_id={topic.id}, elapsed={elapsed:.2f}s")

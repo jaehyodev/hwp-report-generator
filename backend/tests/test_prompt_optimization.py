@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.database.connection import get_db_connection
+from app.database.connection import get_db_connection, init_db
 from app.database.prompt_optimization_db import PromptOptimizationDB
 from app.database.topic_db import TopicDB
 from app.models.prompt_optimization import (
@@ -476,3 +476,137 @@ class TestPromptOptimizationAPI:
         assert response.status_code == 200
         assert body["success"] is True
         assert body["data"] is None
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for output_format/original_topic enhancements
+# ---------------------------------------------------------------------------
+
+
+def test_db_schema_migration_output_format_original_topic():
+    """DB 스키마: output_format, original_topic 컬럼 추가 확인"""
+    init_db()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("PRAGMA table_info(prompt_optimization_result)")
+    columns = {row[1]: row for row in cursor.fetchall()}
+
+    assert "output_format" in columns, "output_format 컬럼 없음"
+    assert "original_topic" in columns, "original_topic 컬럼 없음"
+    assert columns["output_format"][2] == "TEXT", "output_format 타입 불일치"
+    assert columns["original_topic"][2] == "TEXT", "original_topic 타입 불일치"
+
+    conn.close()
+
+
+def test_create_with_output_format_and_original_topic(topic_factory, create_test_user):
+    """CRUD: output_format, original_topic 저장 확인"""
+    topic_id = topic_factory().id
+    user_id = create_test_user.id
+
+    opt_id = PromptOptimizationDB.create(
+        topic_id=topic_id,
+        user_id=user_id,
+        user_prompt="우리 시장 전략 분석",
+        hidden_intent="시장 점유율 확대",
+        role="분석가",
+        context="금융 시장",
+        task="상세 분석",
+        model_name="claude-sonnet-4-5-20250929",
+        latency_ms=150,
+        output_format="list",  # ✅ NEW
+        original_topic="디지털뱅킹 트렌드",  # ✅ NEW
+    )
+
+    result = PromptOptimizationDB.get_by_id(opt_id)
+    assert result["output_format"] == "list"
+    assert result["original_topic"] == "디지털뱅킹 트렌드"
+
+
+def test_create_without_new_fields_defaults_to_null(topic_factory, create_test_user):
+    """CRUD: output_format/original_topic 없을 시 NULL 처리"""
+    topic_id = topic_factory().id
+    user_id = create_test_user.id
+
+    opt_id = PromptOptimizationDB.create(
+        topic_id=topic_id,
+        user_id=user_id,
+        user_prompt="샘플 프롬프트 1234567890",
+        hidden_intent=None,
+        role="분석가",
+        context="시장",
+        task="분석",
+        model_name="claude-sonnet-4-5-20250929",
+        latency_ms=100,
+    )
+
+    result = PromptOptimizationDB.get_by_id(opt_id)
+    assert result["output_format"] is None
+    assert result["original_topic"] is None
+
+
+@pytest.mark.asyncio
+async def test_two_step_planning_saves_output_format_and_original_topic(monkeypatch, create_test_user):
+    """Integration: sequential_planning과 DB 연동 확인"""
+    from app.utils.sequential_planning import _two_step_planning
+
+    topic = TopicDB.create_topic(
+        user_id=create_test_user.id,
+        topic_data=TopicCreate(input_prompt="테스트", language="ko"),
+    )
+
+    mock_first_response = json.dumps(
+        {
+            "output_structure": "bullet_list",
+            "role": "전문가",
+            "context": "맥락",
+            "task": "작업",
+            "hidden_intent": "의도",
+            "sections": [],
+        }
+    )
+
+    async def mock_call(*args, **kwargs):
+        if "위 분석 결과를 참고하여" in args[0]:
+            return json.dumps({"title": "계획", "sections": [], "estimated_word_count": 1000})
+        return mock_first_response
+
+    monkeypatch.setattr(
+        "app.utils.sequential_planning._call_sequential_planning",
+        mock_call,
+    )
+
+    await _two_step_planning(
+        topic="디지털뱅킹 분석",
+        user_id=str(create_test_user.id),
+        is_web_search=False,
+        topic_id=topic.id,
+    )
+
+    opt = PromptOptimizationDB.get_latest_by_topic(topic.id)
+    assert opt is not None
+    assert opt["original_topic"] == "디지털뱅킹 분석"
+    assert opt["output_format"] == "bullet_list"
+
+
+def test_existing_create_sample_optimization_compatibility(topic_factory, create_test_user):
+    """기존 _create_sample_optimization 호출이 실패하지 않음"""
+    topic_id = topic_factory().id
+    user_id = create_test_user.id
+
+    opt_id = _create_sample_optimization(
+        topic_id=topic_id,
+        user_id=user_id,
+        role="시니어 분석가",
+        context="금융 시장",
+        task="요청 정리",
+        model_name="claude-sonnet-4-5-20250929",
+        latency_ms=120,
+        hidden_intent="시장 점유율 확대",
+    )
+
+    result = PromptOptimizationDB.get_by_id(opt_id)
+    assert result is not None
+    assert result["output_format"] is None  # 기존 함수는 이 필드를 전달하지 않음
+    assert result["original_topic"] is None  # 기존 함수는 이 필드를 전달하지 않음

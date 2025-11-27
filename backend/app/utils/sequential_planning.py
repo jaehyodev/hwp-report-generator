@@ -12,7 +12,6 @@ from typing import Dict, Optional, Any
 
 from app.utils.claude_client import ClaudeClient
 from app.utils.prompts import get_base_plan_prompt, get_advanced_planner_prompt, get_plan_markdown_rules
-from app.utils.prompt_optimizer import optimize_prompt_with_claude
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +72,6 @@ async def sequential_planning(
         ValueError: 필수 파라미터 누락
 
     """
-    start_time = time.time()
 
     # 1. 입력 검증
     if not topic or not isinstance(topic, str):
@@ -85,50 +83,78 @@ async def sequential_planning(
     logger.info(f"Sequential Planning started - topic={topic}, template_id={template_id}")
 
     try:
-        # 2. Single-step or two-step planning based on is_template_used parameter
         if is_template_used:
-            # Single-step: Traditional template-based planning
-            guidance_prompt = get_base_plan_prompt()
-            input_prompt = f"""요청 주제: {topic} {guidance_prompt} """
+            return await _single_step_planning(topic, is_web_search)
+        return await _two_step_planning(topic, user_id, is_web_search, topic_id)
 
-            # Single API call
-            plan_response = await _call_sequential_planning(
-                input_prompt,
-                is_web_search=is_web_search
-            )
+    except Exception as e:
+        logger.error(f"Sequential Planning failed - error={str(e)}", exc_info=True)
+        raise SequentialPlanningError(f"Failed to generate plan: {str(e)}")
 
-            # Parse response
-            plan_dict = _parse_plan_response(plan_response)
 
-            elapsed = time.time() - start_time
-            logger.info(f"Sequential Planning (single-step) completed - elapsed={elapsed:.2f}s, sections={len(plan_dict['sections'])}")
+async def _single_step_planning(topic: str, is_web_search: bool) -> Dict[str, Any]:
+    """Template 기반 프롬프트를 활용한 단일 단계 계획 생성"""
+    start_time = time.time()
 
-            return plan_dict
+    guidance_prompt = get_base_plan_prompt()
+    input_prompt = f"""요청 주제: {topic} {guidance_prompt} """
 
-        else:
-            # Two-step: Advanced Role Planner with 2-stage API calling
-            logger.info("Sequential Planning (two-step) started - using Advanced Role Planner")
+    plan_response = await _call_sequential_planning(
+        input_prompt,
+        is_web_search=is_web_search
+    )
 
-            # Step 1: First API call with ADVANCED_PLANNER_PROMPT
-            advanced_prompt = get_advanced_planner_prompt()
-            advanced_prompt = advanced_prompt.replace("{{USER_TOPIC}}", topic)
-            first_input_prompt = advanced_prompt
+    plan_dict = _parse_plan_response(plan_response)
 
-            first_response = await _call_sequential_planning(
-                first_input_prompt,
-                is_web_search=is_web_search
-            )
+    elapsed = time.time() - start_time
+    logger.info(
+        "Sequential Planning (single-step) completed - elapsed=%0.2fs, sections=%d",
+        elapsed,
+        len(plan_dict["sections"])
+    )
 
-            logger.info(f"Sequential Planning - first API call completed")
+    return plan_dict
 
-            # Step 2: Convert first response to markdown for prompt_user
-            first_response_json = json.loads(_extract_json_from_response(first_response))
-            prompt_user = _build_prompt_user_from_first_response(first_response_json)
 
-            logger.info(f"Sequential Planning - first response converted to markdown (prompt_user)")
+async def _two_step_planning(
+    topic: str,
+    user_id: Optional[str],
+    is_web_search: bool,
+    topic_id: Optional[int]
+) -> Dict[str, Any]:
+    """Advanced Role Planner 기반 2단계 계획 생성 및 DB 저장"""
+    start_time = time.time()
 
-            # Step 3: Second API call with prompt_user included
-            second_input_prompt = f"""
+    logger.info("Sequential Planning (two-step) started - using Advanced Role Planner")
+
+    advanced_prompt = get_advanced_planner_prompt().replace("{{USER_TOPIC}}", topic)
+    first_response = await _call_sequential_planning(
+        advanced_prompt,
+        is_web_search=is_web_search
+    )
+
+    logger.info("Sequential Planning - first API call completed")
+
+    first_response_json = json.loads(_extract_json_from_response(first_response))
+    logger.info(
+        "Sequential Planning - first response parsed (keys=%s)",
+        list(first_response_json.keys())
+    )
+
+    prompt_fields = _extract_prompt_fields(first_response_json)
+    prompt_system = _build_prompt_system_from_fields(
+        role=prompt_fields["role"],
+        context=prompt_fields["context"]
+    )
+    prompt_user = prompt_fields["task"]
+
+    logger.info(
+        "Sequential Planning - first response converted to markdown (prompt_user_length=%d, sections=%d)",
+        len(prompt_user),
+        len(first_response_json.get("sections", []))
+    )
+
+    second_input_prompt = f"""
 이전 분석 결과를 기반으로 상세 계획을 생성하세요:
 
 {prompt_user}
@@ -136,14 +162,31 @@ async def sequential_planning(
 위 분석 결과를 참고하여, 다음 구조의 JSON으로 최종 보고서 계획을 생성하세요:
 {{
     "title": "보고서 제목",
+    "date": "2025.10.01",
     "sections": [
         {{
-            "title": "섹션 제목",
-            "description": "섹션 설명 (1문장)",
-            "key_points": ["포인트1", "포인트2", "포인트3"],
+            "section_name": "BACKGROUND",
+            "title": "배경 제목",
+            "description": "배경 설명 (3문장)",
             "order": 1
         }},
-        ...
+        {{
+            "section_name": "MAIN_CONTENT",
+            "title": "섹션 제목",
+            "description": "섹션 설명",
+            "order": 2
+        }},
+        {{
+            "section_name": "SUMMARY",
+            "title": "요약 제목",
+            "description": "요약 설명",
+            "order": 3
+        }}{{
+            "section_name": "CONCLUSION",
+            "title": "결론 제목",
+            "description": "결론 설명",
+            "order": 4
+        }}
     ],
     "estimated_word_count": 5000,
     "estimated_sections_count": 5
@@ -151,71 +194,75 @@ async def sequential_planning(
 
 응답은 반드시 유효한 JSON만 포함하세요. Markdown 형식이나 추가 설명은 불가합니다.
 """
+    second_response = await _call_sequential_planning(
+        second_input_prompt,
+        is_web_search=is_web_search,
+        system_prompt=prompt_system
+    )
 
-            second_response = await _call_sequential_planning(
-                second_input_prompt,
-                is_web_search=is_web_search
+    logger.info("Sequential Planning - second API call completed")
+
+    plan_dict = _parse_plan_response(second_response)
+    plan_dict["prompt_user"] = prompt_user
+    plan_dict["prompt_system"] = prompt_system
+
+    if topic_id is not None:
+        try:
+            from app.database.prompt_optimization_db import PromptOptimizationDB
+
+            emotional_needs = prompt_fields.get("emotional_needs", {})
+
+            logger.info(
+                "Sequential Planning - Saving prompt optimization result - topic_id=%s",
+                topic_id
             )
 
-            logger.info(f"Sequential Planning - second API call completed")
+            PromptOptimizationDB.create(
+                topic_id=topic_id,
+                user_id=int(user_id) if isinstance(user_id, str) else user_id,
+                user_prompt=prompt_user,
+                hidden_intent=prompt_fields.get("hidden_intent"),
+                emotional_needs=emotional_needs,
+                underlying_purpose=prompt_fields.get("underlying_purpose"),
+                formality=emotional_needs.get("formality"),
+                confidence_level=emotional_needs.get("confidence_level"),
+                decision_focus=emotional_needs.get("decision_focus"),
+                output_format=prompt_fields.get("output_format"),
+                original_topic=topic,
+                role=prompt_fields.get("role"),
+                context=prompt_fields.get("context"),
+                task=prompt_fields.get("task"),
+                model_name=PROMPT_OPTIMIZATION_DEFAULT_MODEL,
+                latency_ms=int((time.time() - start_time) * 1000)
+            )
 
-            # Step 4: Parse second response
-            plan_dict = _parse_plan_response(second_response)
+            # ✅ NEW: output_format 미저장 시 경고
+            if not prompt_fields.get("output_format"):
+                logger.warning(
+                    "Sequential Planning - output_format not detected in Claude response - topic_id=%s",
+                    topic_id
+                )
 
-            # Step 5: Add prompt_user and prompt_system to response
-            plan_dict["prompt_user"] = prompt_user
-            plan_dict["prompt_system"] = get_plan_markdown_rules()
+            logger.info(
+                "Sequential Planning - Prompt optimization result saved - topic_id=%s",
+                topic_id
+            )
+        except Exception as opt_exc:
+            logger.warning(
+                "Sequential Planning - Prompt optimization result save failed (non-blocking) - topic_id=%s, error=%s",
+                topic_id,
+                str(opt_exc),
+                exc_info=True
+            )
 
-            elapsed = time.time() - start_time
-            logger.info(f"Sequential Planning (two-step) completed - elapsed={elapsed:.2f}s, sections={len(plan_dict['sections'])}")
+    elapsed = time.time() - start_time
+    logger.info(
+        "Sequential Planning (two-step) completed - elapsed=%0.2fs, sections=%d",
+        elapsed,
+        len(plan_dict["sections"])
+    )
 
-            # isTemplateUsed=false일 경우, prompt_user를 기반으로 프롬프트 최적화 수행
-            if not is_template_used and topic_id is not None:
-                try:
-                    logger.info(
-                        "Sequential Planning - Optimizing prompt based on Advanced Role Planner result - topic_id=%s",
-                        topic_id
-                    )
-
-                    optimization_result = await optimize_prompt_with_claude(
-                        user_prompt=prompt_user,
-                        topic_id=topic_id,
-                        model=PROMPT_OPTIMIZATION_DEFAULT_MODEL
-                    )
-
-                    from app.database.prompt_optimization_db import PromptOptimizationDB
-
-                    PromptOptimizationDB.create(
-                        topic_id=topic_id,
-                        user_id=int(user_id) if isinstance(user_id, str) else user_id,
-                        user_prompt=prompt_user,
-                        hidden_intent=optimization_result.get("hidden_intent"),
-                        emotional_needs=optimization_result.get("emotional_needs"),
-                        underlying_purpose=optimization_result.get("underlying_purpose"),
-                        role=optimization_result.get("role"),
-                        context=optimization_result.get("context"),
-                        task=optimization_result.get("task"),
-                        model_name=PROMPT_OPTIMIZATION_DEFAULT_MODEL,
-                        latency_ms=optimization_result.get("latency_ms", 0)
-                    )
-
-                    logger.info(
-                        "Sequential Planning - Prompt optimization completed - topic_id=%s",
-                        topic_id
-                    )
-                except Exception as opt_exc:
-                    logger.warning(
-                        "Sequential Planning - Prompt optimization failed (non-blocking) - topic_id=%s, error=%s",
-                        topic_id,
-                        str(opt_exc),
-                        exc_info=True
-                    )
-
-            return plan_dict
-
-    except Exception as e:
-        logger.error(f"Sequential Planning failed - error={str(e)}", exc_info=True)
-        raise SequentialPlanningError(f"Failed to generate plan: {str(e)}")
+    return plan_dict
 
 def _extract_json_from_response(response_text: str) -> str:
     """
@@ -252,7 +299,8 @@ def _extract_json_from_response(response_text: str) -> str:
 
 async def _call_sequential_planning(
     input_prompt: str,
-    is_web_search: bool = False
+    is_web_search: bool = False,
+    system_prompt: Optional[str] = None
 ) -> str:
     """
     Claude API를 호출하여 Sequential Planning 실행
@@ -260,6 +308,7 @@ async def _call_sequential_planning(
     Args:
         input_prompt: 입력 프롬프트
         is_web_search: Claude 웹 검색 활성화 여부
+        system_prompt: Claude system prompt (없으면 기본값 사용)
 
     Returns:
         Claude API 응답 (JSON 문자열)
@@ -269,6 +318,7 @@ async def _call_sequential_planning(
     """
     try:
         logger.info(f"Calling Claude API for sequential planning - using fast model")
+        system_prompt_text = system_prompt or "You are an expert in creating structured report plans. Respond only with valid JSON."
 
         # ClaudeClient 초기화 및 빠른 모델 사용
         claude = ClaudeClient()
@@ -284,7 +334,7 @@ async def _call_sequential_planning(
         # 빠른 모델로 호출 (Haiku - 응답 속도 우선)
         plan_text, input_tokens, output_tokens = claude.chat_completion_fast(
             messages=messages,
-            system_prompt="You are an expert in creating structured report plans. Respond only with valid JSON.",
+            system_prompt=system_prompt_text,
             isWebSearch=is_web_search
         )
 
@@ -390,66 +440,93 @@ def _build_text_plan(plan_json: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _build_prompt_user_from_first_response(first_response_json: Dict[str, Any]) -> str:
+def _extract_prompt_fields(first_response_json: Dict[str, Any]) -> Dict[str, Any]:
     """
-    첫 번째 API 응답 JSON을 마크다운으로 변환하여 prompt_user로 사용
-
-    Role Planner 응답 (selected_role, framework, sections)을 마크다운 형식으로 변환합니다.
+    Role/Context/Task 및 감정적 니즈 필드 추출 및 기본값 제공
 
     Args:
-        first_response_json: 첫 번째 Claude API 응답 JSON
-        {
-            "selected_role": "Financial Analyst",
-            "framework": "Top-down Macro Analysis",
-            "sections": [...]
-        }
+        first_response_json: Advanced Role Planner의 첫 번째 API 응답 JSON
 
     Returns:
-        str: 마크다운 형식의 prompt_user
-
-    Examples:
-        >>> response = {
-        ...     "selected_role": "Financial Analyst",
-        ...     "framework": "Top-down Macro Analysis",
-        ...     "sections": [
-        ...         {"title": "배경", "description": "...", "key_points": [...], "order": 1}
-        ...     ]
-        ... }
-        >>> md = _build_prompt_user_from_first_response(response)
-        >>> "선택된 역할" in md
-        True
-        >>> "프레임워크" in md
-        True
+        {
+            "hidden_intent": str,
+            "emotional_needs": {"formality": str, "confidence_level": str, "decision_focus": str},
+            "underlying_purpose": str,
+            "role": str,
+            "context": str,
+            "task": str
+        }
     """
-    selected_role = first_response_json.get("selected_role", "전문가")
-    framework = first_response_json.get("framework", "분석 프레임워크")
-    sections = first_response_json.get("sections", [])
+    restructured = first_response_json.get("restructured_prompt", {}) if isinstance(first_response_json.get("restructured_prompt", {}), dict) else {}
+    analysis = first_response_json.get("analysis", {}) if isinstance(first_response_json.get("analysis", {}), dict) else {}
 
-    lines = [
-        f"## 선택된 역할: {selected_role}",
-        f"{selected_role} 관점에서 주제를 분석합니다.",
-        "",
-        f"## 프레임워크: {framework}",
-        f"{framework}을(를) 기반으로 분석합니다.",
-        "",
-    ]
+    # 감정적 니즈 추출 (emotional_needs dict에서 개별 필드 추출)
+    emotional_needs_raw = first_response_json.get("emotional_needs", {})
+    if not isinstance(emotional_needs_raw, dict):
+        emotional_needs_raw = {}
 
-    # 섹션별 계획 추가
-    for idx, section in enumerate(sections, 1):
-        section_title = section.get("title", f"섹션 {idx}")
-        description = section.get("description", "")
-        key_points = section.get("key_points", [])
+    emotional_needs = {
+        "formality": emotional_needs_raw.get("formality", "professional"),
+        "confidence_level": emotional_needs_raw.get("confidence_level", "medium"),
+        "decision_focus": emotional_needs_raw.get("decision_focus", "strategic")
+    }
 
-        lines.append(f"## 섹션 {idx}: {section_title}")
+    role = (
+        restructured.get("role")
+        or first_response_json.get("role")
+        or first_response_json.get("selected_role")
+        or "전문가"
+    )
+    context = (
+        restructured.get("context")
+        or first_response_json.get("context")
+        or first_response_json.get("framework")
+    )
 
-        if description:
-            lines.append(description)
-            lines.append("")
+    output_structure = (
+        restructured.get("output_structure")
+        or first_response_json.get("context")
+        or first_response_json.get("framework")
+    )
 
-        if key_points:
-            lines.append("주요 포인트:")
-            for point in key_points:
-                lines.append(f"- {point}")
-            lines.append("")
+    task = (
+        restructured.get("task")
+        or first_response_json.get("task")
+        or "주어진 주제를 기반으로 보고서 계획을 작성하세요."
+    )
 
-    return "\n".join(lines)
+    hidden_intent = (
+        first_response_json.get("hidden_intent")
+        or ""
+    )
+
+    underlying_purpose = (
+        first_response_json.get("underlying_purpose")
+        or ""
+    )
+
+    return {
+        "hidden_intent": hidden_intent,
+        "emotional_needs": emotional_needs,
+        "underlying_purpose": underlying_purpose,
+        "role": role,
+        "context": context,
+        "output_structure": output_structure,
+        "task": task
+    }
+
+
+def _build_prompt_system_from_fields(role: str, context: str) -> str:
+    """
+    role/context를 system prompt 상단에 반영하고 기본 마크다운 규칙을 이어붙인다.
+    """
+    role_text = role or "전문가"
+    context_text = context or "맥락 정보가 제공되지 않았습니다."
+
+    return f"""{role_text}
+
+# 맥락
+{context_text}
+
+## 마크다운 작성 규칙
+{get_plan_markdown_rules()}"""

@@ -494,3 +494,77 @@ task.add_done_callback(handle_task_result)
 **마지막 업데이트:** 2025-11-20
 **버전:** 2.6.0
 **상태:** ✅ Markdown to HWPX 변환 기능 완성
+
+### v2.8 (2025-11-27) - Prompt Optimization에 신규 컬럼 추가
+
+✅ **prompt_optimization_result 테이블 스키마 확장**
+- 신규 컬럼 2개 추가: `output_format`, `original_topic`
+- `output_format`: Claude 응답 구조 정보 (list, structured, etc.)
+- `original_topic`: 사용자 원본 입력 주제
+- 데이터 분석 목적으로 프롬프트 최적화 이력 보강
+
+✅ **PromptOptimizationDB.create() 메서드 업데이트**
+- 파라미터 추가: output_format, original_topic
+- INSERT 쿼리 확장
+- NULL 기본값 처리
+
+✅ **sequential_planning._two_step_planning() 통합**
+- _extract_prompt_fields()에서 output_format 추출
+- 원본 topic을 original_topic으로 저장
+- output_format 미저장 시 경고 로깅
+
+✅ **Pydantic 모델 확장**
+- PromptOptimizationCreate: output_format, original_topic 필드 추가
+- PromptOptimizationResponse: output_format, original_topic 필드 추가
+
+✅ **테스트 추가**
+- TC-001: DB 스키마 마이그레이션 검증
+- TC-002: 신규 필드 저장 확인
+- TC-003: NULL 기본값 처리
+- TC-004: sequential_planning 통합 검증
+- TC-005: 기존 테스트 호환성 확인
+- 5개 테스트 모두 추가
+
+### 신규 API 엔드포인트
+- 없음 (내부 저장만)
+
+### 변경된 함수
+
+| 함수 | 파일 | 변경 내용 |
+|------|------|---------|
+| create() | PromptOptimizationDB | output_format, original_topic 파라미터 추가 |
+| _two_step_planning() | sequential_planning | 신규 필드 전달 & 로깅 추가 |
+
+### 데이터 활용 예시
+
+```sql
+-- 1. output_format 분포 확인
+SELECT output_format, COUNT(*) as count
+FROM prompt_optimization_result
+WHERE output_format IS NOT NULL
+GROUP BY output_format;
+
+-- 2. 원본 주제 vs 최적화 프롬프트 비교
+SELECT original_topic, user_prompt
+FROM prompt_optimization_result
+WHERE original_topic IS NOT NULL AND user_prompt IS NOT NULL
+LIMIT 10;
+```
+
+### 주요 코드 변경
+
+**sequential_planning._two_step_planning():**
+```python
+PromptOptimizationDB.create(
+    ...
+    output_format=prompt_fields.get("output_format"),  # ✅ NEW
+    original_topic=topic,  # ✅ NEW
+    ...
+)
+```
+
+---
+
+**마지막 업데이트:** 2025-11-27
+**버전:** 2.8.0
+**상태:** ✅ Prompt Optimization 스키마 확장 완료

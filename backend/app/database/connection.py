@@ -260,8 +260,11 @@ def init_db():
 
                 -- 분석 결과 (숨겨진 의도)
                 hidden_intent TEXT,
-                emotional_needs TEXT,  -- JSON을 TEXT로 저장
+                emotional_needs TEXT,  -- JSON 문자열
                 underlying_purpose TEXT,
+                formality TEXT,  -- 형식: formal, professional, casual
+                confidence_level TEXT,  -- 형식: low, medium, high
+                decision_focus TEXT,  -- 형식: strategic, tactical, operational
 
                 -- 최적화된 프롬프트 (Claude 정제)
                 role TEXT NOT NULL,
@@ -281,6 +284,28 @@ def init_db():
         """)
     except sqlite3.OperationalError:
         pass  # 테이블이 이미 존재하면 무시
+
+    # prompt_optimization_result 컬럼 마이그레이션 (v2.8+)
+    for column_def in (
+        "emotional_needs TEXT DEFAULT NULL",
+        "formality TEXT DEFAULT NULL",
+        "confidence_level TEXT DEFAULT NULL",
+        "decision_focus TEXT DEFAULT NULL",
+    ):
+        try:
+            cursor.execute(f"ALTER TABLE prompt_optimization_result ADD COLUMN {column_def}")
+        except sqlite3.OperationalError:
+            pass  # 컬럼이 이미 존재하면 무시
+
+    # prompt_optimization_result 테이블 마이그레이션: output_format, original_topic 컬럼 추가 (v2.8+)
+    for column_def in (
+        "output_format TEXT DEFAULT NULL",
+        "original_topic TEXT DEFAULT NULL",
+    ):
+        try:
+            cursor.execute(f"ALTER TABLE prompt_optimization_result ADD COLUMN {column_def}")
+        except sqlite3.OperationalError:
+            pass  # 컬럼이 이미 존재하면 무시
 
     # 인덱스 생성
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")

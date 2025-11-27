@@ -22,13 +22,18 @@ class PromptOptimizationDB:
         user_id: int,
         user_prompt: str,
         hidden_intent: Optional[str],
-        emotional_needs: Optional[Any],
-        underlying_purpose: Optional[str],
         role: str,
         context: str,
         task: str,
         model_name: str,
         latency_ms: int,
+        emotional_needs: Optional[Dict[str, Any]] = None,
+        underlying_purpose: Optional[str] = None,
+        formality: Optional[str] = None,
+        confidence_level: Optional[str] = None,
+        decision_focus: Optional[str] = None,
+        output_format: Optional[str] = None,
+        original_topic: Optional[str] = None,
     ) -> int:
         """새 고도화 결과를 저장한다.
 
@@ -43,13 +48,18 @@ class PromptOptimizationDB:
             user_id: 사용자 ID
             user_prompt: 사용자 입력 프롬프트
             hidden_intent: 숨겨진 의도
-            emotional_needs: 감정적 니즈 (JSON 직렬화 대상)
-            underlying_purpose: 근본 목적
             role: Claude용 역할 프롬프트
             context: Claude용 컨텍스트 문자열
             task: Claude용 작업 설명
             model_name: 사용한 모델명
             latency_ms: 응답 시간 (ms)
+            emotional_needs: 감정적 니즈(dict) - JSON 문자열로 저장
+            underlying_purpose: 근본 목적
+            formality: 형식성 (formal, neutral, casual)
+            confidence_level: 확신 수준 (high, medium, low)
+            decision_focus: 결정 초점 (decisive, exploratory, uncertain)
+            output_format: Claude 응답 구조 정보 (str)
+            original_topic: 사용자 원본 입력 주제 (str)
 
         반환:
             생성된 레코드 ID
@@ -60,8 +70,38 @@ class PromptOptimizationDB:
         """
         conn = get_db_connection()
         cursor = conn.cursor()
-        serialized_needs = PromptOptimizationDB._serialize_emotional_needs(emotional_needs)
         now = datetime.now()
+
+        def _to_text(value: Any) -> Optional[str]:
+            """dict/list는 JSON 문자열로, 나머지는 문자열 캐스팅."""
+            if value is None:
+                return None
+            if isinstance(value, (dict, list)):
+                return json.dumps(value, ensure_ascii=False)
+            return str(value)
+
+        emotional_needs_payload: Optional[str] = None
+        if emotional_needs is not None:
+            if isinstance(emotional_needs, str):
+                emotional_needs_payload = emotional_needs
+            else:
+                emotional_needs_payload = json.dumps(emotional_needs, ensure_ascii=False)
+
+        hidden_intent_value = _to_text(hidden_intent)
+        underlying_purpose_value = _to_text(underlying_purpose)
+        role_value = _to_text(role) or ""
+        context_value = _to_text(context) or ""
+        task_value = _to_text(task) or ""
+        model_name_value = _to_text(model_name) or ""
+        user_prompt_value = _to_text(user_prompt) or ""
+
+        formality_value = formality or (emotional_needs.get("formality") if isinstance(emotional_needs, dict) else None)
+        confidence_value = confidence_level or (
+            emotional_needs.get("confidence_level") if isinstance(emotional_needs, dict) else None
+        )
+        decision_value = decision_focus or (
+            emotional_needs.get("decision_focus") if isinstance(emotional_needs, dict) else None
+        )
 
         try:
             # prompt_optimization_result 테이블에 신규 레코드를 INSERT
@@ -74,6 +114,11 @@ class PromptOptimizationDB:
                     hidden_intent,
                     emotional_needs,
                     underlying_purpose,
+                    formality,
+                    confidence_level,
+                    decision_focus,
+                    output_format,
+                    original_topic,
                     role,
                     context,
                     task,
@@ -82,19 +127,24 @@ class PromptOptimizationDB:
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     topic_id,
                     user_id,
-                    user_prompt,
-                    hidden_intent,
-                    serialized_needs,
-                    underlying_purpose,
-                    role,
-                    context,
-                    task,
-                    model_name,
+                    user_prompt_value,
+                    hidden_intent_value,
+                    emotional_needs_payload,
+                    underlying_purpose_value,
+                    formality_value,
+                    confidence_value,
+                    decision_value,
+                    output_format or None,
+                    original_topic or None,
+                    role_value,
+                    context_value,
+                    task_value,
+                    model_name_value,
                     latency_ms,
                     now,
                     now,
@@ -302,18 +352,6 @@ class PromptOptimizationDB:
             raise
         finally:
             conn.close()
-
-    @staticmethod
-    def _serialize_emotional_needs(emotional_needs: Optional[Any]) -> Optional[str]:
-        """감정적 니즈 입력값을 JSON 문자열로 직렬화한다."""
-        if emotional_needs is None:
-            return None
-        if isinstance(emotional_needs, str):
-            return emotional_needs
-        try:
-            return json.dumps(emotional_needs, ensure_ascii=False)
-        except (TypeError, ValueError):
-            return None
 
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
