@@ -1851,20 +1851,32 @@ async def _background_generate_report(
         artifact_id: Artifact ID (상태 업데이트용)
         topic: 보고서 주제
         plan: Sequential Planning에서 받은 계획
-        template_id: 템플릿 ID (필수, 누락 시 실패)
+        template_id: 템플릿 ID (source_type='template'일 때 필수, 'basic'일 때 선택)
         user_id: 사용자 ID
         is_web_search: Claude 웹 검색 활성화 여부
     """
-    if not template_id:
-        raise InvalidTemplateError(
-            code=ErrorCode.TEMPLATE_NOT_FOUND,
-            http_status=404,
-            message="템플릿 정보가 지정되지 않은 토픽입니다.",
-            hint="/api/topics/plan 호출 후 템플릿이 지정된 토픽을 사용해주세요."
-        )
-
     try:
         logger.info(f"[BACKGROUND] Report generation started - topic_id={topic_id}, artifact_id={artifact_id}")
+
+        # === Step 0: Topic 정보 조회 (source_type 확인용) ===
+        logger.info(f"[BACKGROUND] Fetching topic info - topic_id={topic_id}")
+        topic_obj = await asyncio.to_thread(
+            TopicDB.get_topic_by_id,
+            topic_id
+        )
+        if not topic_obj:
+            raise ValueError(f"Topic not found - topic_id={topic_id}")
+
+        logger.info(f"[BACKGROUND] Topic loaded - source_type={topic_obj.source_type}")
+
+        # source_type='template'인 경우 template_id 검증
+        if topic_obj.source_type == TopicSourceType.TEMPLATE and not template_id:
+            raise InvalidTemplateError(
+                code=ErrorCode.TEMPLATE_NOT_FOUND,
+                http_status=404,
+                message="이 토픽은 template 기반이지만 template_id가 지정되지 않았습니다.",
+                hint="토픽 생성 시 template_id를 지정해주세요."
+            )
 
         # === Step 1: 진행 상태 업데이트 ===
         logger.info(f"[BACKGROUND] Preparing content - topic_id={topic_id}")
@@ -1969,11 +1981,7 @@ async def _background_generate_report(
             progress_percent=70
         )
 
-        # ✅ Non-blocking: DB 조회를 스레드 끝에서 실행
-        topic_obj = await asyncio.to_thread(
-            TopicDB.get_topic_by_id,
-            topic_id
-        )
+        # ✅ topic_obj은 Step 0에서 이미 조회됨 (재사용)
         version = next_artifact_version(topic_id, ArtifactKind.MD, topic_obj.language)
         base_dir, md_path = build_artifact_paths(topic_id, version, "report.md")
 
