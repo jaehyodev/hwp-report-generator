@@ -72,7 +72,7 @@ interface TopicStore {
     clearPlan: () => void
 
     // Actions - 보고서 생성
-    generateReportFromPlan: () => Promise<void>
+    generateReportFromPlan: () => Promise<{ ok: boolean, error?: any}>
 
     // Actions - 생성 상태 관리
     addGeneratingTopicId: (topicId: number) => void
@@ -448,8 +448,10 @@ export const useTopicStore = create<TopicStore>((set, get) => {
 
             if (!plan) {
                 antdMessage.error('계획 정보가 없습니다.')
-                return
+                return { ok: false }
             }
+
+            console.log('generateReportFromPlan >> plan >> ', plan)
 
             const realTopicId = plan.topic_id
             const templateId = selectedTemplateId || 1 // 선택된 템플릿 ID 사용, fallback: 1
@@ -606,11 +608,15 @@ export const useTopicStore = create<TopicStore>((set, get) => {
 
                                 // 메시지 처리
                                 const planMessages = messageStore.getMessages(0)
+                                // 서버에 있는 메시지 목록 요청
                                 const messagesResponse = await messageApi.listMessages(realTopicId)
+                                // 메시지를 도메인으로 변환
                                 const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
+                                // 현재 대화에 해당하는 아티팩트 목록 요청
                                 const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
+                                // 메시지 목록과 아티팩트 목록 결합
                                 const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
-
+                                
                                 const updatedPlanMessages = planMessages.map((msg) => ({
                                     ...msg,
                                     topicId: realTopicId
@@ -656,11 +662,13 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                         }
                     )
                 }
+                return { ok: true }
             } catch (error: any) {
                 console.error('보고서 생성 실패:', error)
                 antdMessage.destroy(`generate-${realTopicId}`)
                 antdMessage.error('보고서 생성에 실패했습니다.')
                 get().removeGeneratingTopicId(0)
+                return { ok: false, error: error}
             }
         }
     }

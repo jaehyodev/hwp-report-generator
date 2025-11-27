@@ -140,7 +140,6 @@ const TemplateManagementPage: React.FC = () => {
                 <div className={styles.container}>
                     <Card
                         title="템플릿 관리"
-                        bordered={false}
                         extra={
                             <Space>
                                 <Button icon={<ReloadOutlined />} onClick={() => loadTemplates()} loading={loading}>

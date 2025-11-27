@@ -114,7 +114,7 @@ const TemplateSelectionView = ({onStartChat}: TemplateSelectionViewProps) => {
 
             {loading ? (
                 <div className={styles.loadingContainer}>
-                    <Spin size="large" tip="템플릿 목록을 불러오는 중..." />
+                    <Spin size="large"/>
                 </div>
             ) : filteredTemplates.length === 0 ? (
                 <Empty description={searchText ? '검색 결과가 없습니다.' : '등록된 템플릿이 없습니다.'} className={styles.empty} />
@@ -129,8 +129,7 @@ const TemplateSelectionView = ({onStartChat}: TemplateSelectionViewProps) => {
                                     <Card
                                         hoverable
                                         className={`${styles.templateCard} ${isSelected ? styles.selected : ''}`}
-                                        onClick={() => handleTemplateClick(template.id)}
-                                        bordered={isSelected}>
+                                        onClick={() => handleTemplateClick(template.id)}>
                                         {isSelected && (
                                             <div className={styles.selectedBadge}>
                                                 <CheckCircleFilled className={styles.checkIcon} />

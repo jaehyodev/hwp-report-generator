@@ -72,7 +72,11 @@ const MainPage = () => {
         // OutlineMessage 버튼 숨기기
         setShowOutlineButtons(false)
 
-        await generateReportFromPlan()
+        // 보고서 생성 중 에러 발생 시 다시 보고서 생성하시겠습니까 버튼 활성화.
+        const result = await generateReportFromPlan()
+        if (!result.ok) {
+            setShowOutlineButtons(true)
+        }
     }
 
     /**
@@ -210,8 +214,8 @@ const MainPage = () => {
     // 사이드바 열림 상태
     const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false)
 
-    // 마지막 사용자 메시지 참조 (스크롤용)
-    const lastUserMessageRef = useRef<HTMLDivElement>(null)
+    // 마지막 메시지 참조 (스크롤용)
+    const lastMessageRef = useRef<HTMLDivElement>(null)
 
     // 보고서 드롭다운 참조
     const reportsDropdownRef = useRef<HTMLDivElement>(null)
@@ -233,18 +237,16 @@ const MainPage = () => {
         }
     }, [isReportsDropdownOpen])
 
-    // 두 번째 메시지부터 마지막 사용자 메시지를 헤더 아래로 스크롤
+    // 메시지가 3개 이상일 때 마지막 메시지를 화면에 보이도록 스크롤
     useEffect(() => {
-        if (messages.length > 2 && lastUserMessageRef.current) {
+        if (messages.length > 2 && lastMessageRef.current) {
             const lastMessage = messages[messages.length - 1]
-            if (lastMessage.role === 'user') {
-                setTimeout(() => {
-                    lastUserMessageRef.current?.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                    })
-                }, 100)
-            }
+            setTimeout(() => {
+                lastMessageRef.current?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                })
+            }, 100)
         }
     }, [messages])
 
@@ -339,10 +341,10 @@ const MainPage = () => {
                                 ) : (
                                     <div className={styles.chatMessages}>
                                         {messages.map((message, index) => {
-                                            const isLastUserMessage = message.role === 'user' && index === messages.length - 1
+                                            const isLastMessage = index === messages.length - 1
 
                                             return (
-                                                <div key={message.clientId} ref={isLastUserMessage ? lastUserMessageRef : null}>
+                                                <div key={message.clientId} ref={isLastMessage ? lastMessageRef : null}>
                                                     {message.isPlan ? (
                                                         <OutlineMessage
                                                             message={message}
