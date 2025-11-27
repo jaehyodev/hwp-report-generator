@@ -321,6 +321,11 @@ const MainPage = () => {
             <Sidebar isOpen={isLeftSidebarOpen} onToggle={handleToggleSidebar} onTopicSelect={handleSidebarTopicSelect} onNewTopic={handleNewTopik} />
 
             <div className={`${styles.mainChatPage} ${isLeftSidebarOpen ? styles.sidebarExpanded : styles.sidebarCollapsed}`}>
+                {/* 햄버거 메뉴 버튼 - 모바일/태블릿에서만 표시 (템플릿 선택 화면에서도 보이도록 조건문 밖에 배치) */}
+                <button className={styles.hamburgerBtn} onClick={handleToggleSidebar} aria-label="메뉴 열기">
+                    <MenuOutlined />
+                </button>
+
                 {/* 템플릿 선택 화면 또는 채팅 화면 */}
                 {showTemplateSelection ? (
                     // 템플릿 선택 화면
@@ -328,10 +333,6 @@ const MainPage = () => {
                 ) : (
                     // 기존 채팅 화면
                     <>
-                        {/* 햄버거 메뉴 버튼 - 모바일/태블릿에서만 표시 */}
-                        <button className={styles.hamburgerBtn} onClick={handleToggleSidebar} aria-label="메뉴 열기">
-                            <MenuOutlined />
-                        </button>
                         <div className={styles.chatContainer}>
                             <div className={styles.chatContent}>
                                 {isLoadingMessages ? (

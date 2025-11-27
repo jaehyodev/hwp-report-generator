@@ -50,25 +50,29 @@
 
 /* ========== Hamburger Button ========== */
 .hamburgerBtn {
-    position: fixed;
-    top: 1rem;
-    left: 1rem;
-    z-index: 998;
-    width: 2.5rem;
-    height: 2.5rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: none;
-    border-radius: 8px;
-    background-color: var(--color-white);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    color: var(--icon-btn-color);
+    font-size: 1.25rem;
     cursor: pointer;
-    transition: all 0.2s;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
 }
 
 .hamburgerBtn:hover {
-    background-color: var(--bg-primary);
+    background-color: var(--bg-primary-hover);
+    color: var(--primary-hover);
+    border-color: var(--primary-hover);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
