@@ -1,7 +1,8 @@
-import React, {useState, useRef, useEffect, forwardRef, useImperativeHandle, type KeyboardEvent} from 'react'
-import {PaperClipOutlined, SendOutlined, GlobalOutlined, CloseOutlined, ControlOutlined, FileTextOutlined} from '@ant-design/icons'
+import {useState, useRef, useEffect, forwardRef, useImperativeHandle, type KeyboardEvent} from 'react'
+import {SendOutlined, GlobalOutlined, CloseOutlined, ControlOutlined} from '@ant-design/icons'
 import styles from './ChatInput.module.css'
 import SettingsDropdown from './SettingsDropdown'
+import { Button } from 'antd'
 
 interface ChatInputProps {
     onSend: (message: string, files: File[], webSearchEnabled: boolean) => void
@@ -49,20 +50,29 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({onSend, disabled
         }
     }, [isDropdownOpen])
 
-    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFiles = event.target.files
-        if (selectedFiles) {
-            setFiles((prev) => [...prev, ...Array.from(selectedFiles)])
-        }
-        // Reset input
-        if (fileInputRef.current) {
-            fileInputRef.current.value = ''
-        }
-    }
+    {/* 첨부파일 로직 (미사용 및 미구현) */}
+    /*
+        const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+            const selectedFiles = event.target.files;
+            console.log("선택된 파일들:", selectedFiles);
 
-    const handleRemoveFile = (index: number) => {
-        setFiles((prev) => prev.filter((_, i) => i !== index))
-    }
+            if (selectedFiles) {
+                setFiles(prev => {
+                    const updated = [...prev, ...Array.from(selectedFiles)];
+                    console.log("업데이트될 files:", updated);
+                    return updated;
+                });
+            }
+            // Reset input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = ''
+            }
+        }
+
+        const handleRemoveFile = (index: number) => {
+            setFiles((prev) => prev.filter((_, i) => i !== index))
+        }
+    */
 
     /*
      * 메시지 전송 핸들러
@@ -72,7 +82,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({onSend, disabled
             onSend(message, files, webSearchEnabled)
             setMessage('')
             setFiles([])
-            // Reset textarea height
+            // 사용자 입력 영역 크기 초기화
             if (textareaRef.current) {
                 textareaRef.current.style.height = 'auto'
             }
@@ -89,18 +99,16 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({onSend, disabled
         }
     }
 
+    /*
+     * 사용자 메시지 입력 핸들러
+     */
     const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setMessage(e.target.value)
-        // Auto-resize textarea
+        // 사용자 입력 영역 크기 자동으로 변경
         if (textareaRef.current) {
             textareaRef.current.style.height = 'auto'
             textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
         }
-    }
-
-    const handleWebsiteClick = (url: string) => {
-        const websiteMessage = `${url} 웹사이트의 정보를 참고하여 분석해주세요.`
-        setMessage((prev) => (prev ? `${prev}\n${websiteMessage}` : websiteMessage))
     }
 
     /*
@@ -113,47 +121,42 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({onSend, disabled
 
     return (
         <div className={styles.chatInputContainer}>
-            {/* Website Suggestions */}
+            {/* 첨부파일 표시용 (미사용 및 미구현) */}
             {/*
-        {webSearchEnabled && (
-          <div className={styles.websiteSuggestions}>
-            {WEBSITE_SUGGESTIONS.map((website) => (
-              <button
-                key={website.url}
-                className={styles.websiteBtn}
-                onClick={() => handleWebsiteClick(website.url)}
-                disabled={disabled}
-              >
-                <span className={styles.websiteIcon}>{website.icon}</span>
-                <span className={styles.websiteName}>{website.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      */}
+                {files.length > 0 && (
+                    <div className={styles.uploadedFiles}>
+                        {files.map((file, index) => (
+                            <div key={index} className={styles.uploadedFile}>
+                                <PaperClipOutlined />
+                                <span className={styles.fileName}>{file.name}</span>
+                                <button className={styles.removeFileBtn} onClick={() => handleRemoveFile(index)}>
+                                    <CloseOutlined />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            */}
 
-            {/* Uploaded Files */}
-            {files.length > 0 && (
-                <div className={styles.uploadedFiles}>
-                    {files.map((file, index) => (
-                        <div key={index} className={styles.uploadedFile}>
-                            <PaperClipOutlined />
-                            <span className={styles.fileName}>{file.name}</span>
-                            <button className={styles.removeFileBtn} onClick={() => handleRemoveFile(index)}>
-                                <CloseOutlined />
-                            </button>
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* Input Box */}
+            {/* 사용자 입력창 */}
             <div className={`${styles.chatInputBox} ${styles.multiRow}`}>
                 <div className={styles.leftButtons}>
-                    <button className={styles.attachBtn} onClick={() => fileInputRef.current?.click()} disabled={disabled} title="파일 첨부">
-                        <PaperClipOutlined />
-                    </button>
+                    {/* 첨부파일 (미사용 및 미구현) */}
+                    {/*
+                        <button className={styles.attachBtn} onClick={() => fileInputRef.current?.click()} disabled={disabled} title="파일 첨부">
+                            <PaperClipOutlined />
+                        </button>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            multiple
+                            accept=".hwpx,.txt,.pdf,.doc,.docx"
+                            onChange={handleFileSelect}
+                            style={{display: 'none'}}
+                        />
+                    */}
 
+                    {/* 참조 보고서 선택용 (미사용) */}
                     {/*
                         <div className={styles.reportsWrapper}>
                             <button className={styles.reportsBtn} onClick={onReportsClick} disabled={disabled} title="참조 보고서 선택">
@@ -163,29 +166,30 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({onSend, disabled
                         </div>
                     */}
 
-                    {/* Settings Button with Dropdown */}
+                    {/* 설정 버튼 */}
                     <div className={styles.settingsWrapper}>
-                        <button className={styles.settingsBtn} onClick={() => setIsDropdownOpen(!isDropdownOpen)} disabled={disabled} title="설정">
+                        <Button className={styles.settingsBtn} onClick={() => setIsDropdownOpen(!isDropdownOpen)} disabled={disabled} title="설정">
                             <ControlOutlined />
-                        </button>
-
+                        </Button>
+                        {/* 설정 드랍다운 */}
                         {isDropdownOpen && (
                             <SettingsDropdown ref={dropdownRef} webSearchEnabled={webSearchEnabled} onWebSearchChange={handleWebSearchChange} />
                         )}
                     </div>
 
-                    {/* Web Search Chip */}
+                    {/* 웹 검색 켜질 경우 표시용 */}
                     {webSearchEnabled && (
                         <div className={styles.webSearchChip}>
                             <GlobalOutlined />
                             <span>웹 검색</span>
-                            <button className={styles.chipCloseBtn} onClick={() => setWebSearchEnabled(false)} title="웹 검색 끄기">
+                            <Button className={styles.chipCloseBtn} onClick={() => setWebSearchEnabled(false)} title="웹 검색 끄기">
                                 <CloseOutlined />
-                            </button>
+                            </Button>
                         </div>
                     )}
                 </div>
 
+                {/* 사용자 입력 영역 */}
                 <textarea
                     ref={textareaRef}
                     className={styles.chatTextarea}
@@ -197,18 +201,10 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({onSend, disabled
                     rows={1}
                 />
 
-                <button className={styles.sendBtn} onClick={handleSend} disabled={disabled || (!message.trim() && files.length === 0)} title="전송">
+                {/* 사용자 입력창 안에 전송 버튼 */}
+                <Button className={styles.sendBtn} onClick={handleSend} disabled={disabled || (!message.trim() && files.length === 0)} title="전송">
                     <SendOutlined />
-                </button>
-
-                <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    accept=".hwpx,.txt,.pdf,.doc,.docx"
-                    onChange={handleFileSelect}
-                    style={{display: 'none'}}
-                />
+                </Button>
             </div>
         </div>
     )

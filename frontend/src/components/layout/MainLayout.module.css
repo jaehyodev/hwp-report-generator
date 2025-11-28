@@ -8,6 +8,8 @@
     padding: var(--spacing-lg);
     /* 헤더가 없을 때: 100vh - footer 높이 */
     min-height: calc(100vh - var(--footer-height));
+    display: flex;
+    align-items: center;
 }
 
 /* 헤더가 있을 때: 100vh - header 높이 - footer 높이 */

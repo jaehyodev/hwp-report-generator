@@ -26,7 +26,6 @@ import PublicRoute from './components/auth/PublicRoute'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import MainPage from './pages/MainPage'
-import MainBakPage from './pages/MainBakPage'
 import TopicListPage from './pages/TopicListPage'
 import ChangePasswordPage from './pages/ChangePasswordPage'
 import AdminPage from './pages/AdminPage'
@@ -67,15 +66,6 @@ const App: React.FC = () => {
                                     element={
                                         <PrivateRoute>
                                             <MainPage />
-                                        </PrivateRoute>
-                                    }
-                                />
-
-                                <Route
-                                    path="/bak"
-                                    element={
-                                        <PrivateRoute>
-                                            <MainBakPage />
                                         </PrivateRoute>
                                     }
                                 />

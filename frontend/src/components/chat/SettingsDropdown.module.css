@@ -36,21 +36,12 @@
     background: none;
     cursor: pointer;
     transition: all 0.2s ease;
-    color: #1a1a1a;
     text-align: left;
 }
 
-.dropdownItem:hover {
-    background-color: #f5f5f5;
-}
-
 .dropdownItem.active {
-    background-color: #e8f0fe;
-    color: #1976d2;
-}
-
-.dropdownItem.active .dropdownLabel > :first-child {
-    color: #1976d2;
+    background-color: var(--menu-item-active);
+    color: var(--primary-active);
 }
 
 .dropdownLabel {
@@ -58,10 +49,10 @@
     align-items: center;
     gap: 0.625rem;
     font-size: 0.875rem;
-    color: #1a1a1a;
 }
 
+/* 드랍다운 아이템의 아이콘 */
 .dropdownLabel > :first-child {
-    font-size: 1rem;
-    color: #1976d2;
+    font-size: var(--font-size-md);
+    color: var(--primary-color);
 }

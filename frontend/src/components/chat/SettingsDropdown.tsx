@@ -1,6 +1,7 @@
-import React, {forwardRef} from 'react'
+import {forwardRef} from 'react'
 import {GlobalOutlined} from '@ant-design/icons'
 import styles from './SettingsDropdown.module.css'
+import { Button } from 'antd'
 
 interface SettingsDropdownProps {
     webSearchEnabled: boolean
@@ -10,14 +11,14 @@ interface SettingsDropdownProps {
 const SettingsDropdown = forwardRef<HTMLDivElement, SettingsDropdownProps>(({webSearchEnabled, onWebSearchChange}, ref) => {
     return (
         <div ref={ref} className={styles.dropdown}>
-            <button
+            <Button
                 className={`${styles.dropdownItem} ${webSearchEnabled ? styles.active : ''}`}
                 onClick={() => onWebSearchChange(!webSearchEnabled)}>
                 <div className={styles.dropdownLabel}>
                     <GlobalOutlined />
                     <span>웹 검색</span>
                 </div>
-            </button>
+            </Button>
         </div>
     )
 })

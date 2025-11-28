@@ -140,8 +140,7 @@
     align-items: center;
     justify-content: center;
     background: none;
-    border: 1px solid #e5e5e5;
-    color: #666666;
+    border: 1px solid var(--border-color);
     cursor: pointer;
     border-radius: 0.5rem;
     transition: all 0.2s ease;
@@ -259,7 +258,7 @@
     justify-content: center;
     background-color: #1976d2;
     border: none;
-    color: white;
+    color: var(--color-white);
     cursor: pointer;
     border-radius: 0.5rem;
     transition: all 0.2s ease;
@@ -267,16 +266,13 @@
 }
 
 .sendBtn:hover:not(:disabled) {
-    background-color: #1565c0;
+    background-color: var(--primary-hover) !important;
+    color: var(--color-white) !important;;
 }
 
 .sendBtn:active:not(:disabled) {
-    background-color: #0d47a1;
-}
-
-.sendBtn:disabled {
-    background-color: #e0e0e0;
-    cursor: not-allowed;
+    background-color: var(--primary-active) !important;
+    color: var(--color-white) !important;;
 }
 
 @media (max-width: 768px) {
