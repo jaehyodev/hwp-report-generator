@@ -388,10 +388,10 @@ class TestHelperFunctions:
         # Arrange
         placeholder_data = {
             "id": 1,
+            "template_id": 1,
             "placeholder_key": "{{MARKET_ANALYSIS}}",
             "sort": 1,
-            "max_length": 1500,
-            "min_length": 500,
+            "created_at": datetime.now(),
         }
 
         # Act
@@ -400,7 +400,7 @@ class TestHelperFunctions:
         # Assert
         assert placeholder.placeholder_key == "{{MARKET_ANALYSIS}}"
         assert placeholder.sort == 1
-        assert placeholder.max_length == 1500
+        assert placeholder.template_id == 1
 
         logger.info("✅ Placeholder metadata creation passed")
 
@@ -409,7 +409,7 @@ class TestHelperFunctions:
         # Arrange
         section_data = {
             "id": "MARKET_ANALYSIS",
-            "type": SectionType.SECTION,
+            "type": "SECTION",  # ✅ Now a string, not SectionType enum
             "content": "시장 분석 내용",
             "order": 3,
             "source_type": SourceType.BASIC,
@@ -422,7 +422,7 @@ class TestHelperFunctions:
 
         # Assert
         assert section.id == "MARKET_ANALYSIS"
-        assert section.type == SectionType.SECTION
+        assert section.type == "SECTION"  # ✅ Verify it's a string
         assert section.order == 3
         assert section.max_length == 1500
 
