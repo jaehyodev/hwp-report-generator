@@ -13,7 +13,7 @@
     - Topic에 prompt_user, **prompt_system 모두** 저장됨 (신규)
   - 조건부 로직:
     - `isTemplateUsed == true`: templates 테이블에서 prompt_user, prompt_system 조회 → Topic에 저장 (권한 검증 필수)
-    - `isTemplateUsed == false`: prompt_optimization_result 테이블에서 user_prompt → Topic.prompt_user, (output_format은 이미 저장됨) → Topic에는 user_prompt만 저장
+    - `isTemplateUsed == false`: prompt_optimization_result 테이블에서 user_prompt, output_format 조회 → Topic.prompt_user, Topic.prompt_system 저장
   - 예외/제약:
     - 토픽 생성 실패 시 기존 롤백 로직 유지
     - Template 미존재 또는 권한 없음 시 404/403 + 롤백
@@ -90,12 +90,12 @@ flowchart TD
 | TC ID       | 계층        | 시나리오                              | 목적                                      | 입력/사전조건                                              | 기대결과                                                      |
 | ----------- | ----------- | ------------------------------------- | ----------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------- |
 | TC-001      | Integration | isTemplateUsed=true (권한 OK)         | 템플릿에서 prompt 조회 & 저장            | template_id=1 (소유자), is_template_used=true             | Topic.prompt_user/system = Template.prompt_user/system     |
-| TC-002      | Integration | isTemplateUsed=false (최적화 기반)    | PromptOptimization에서 prompt 조회 & 저장 | topic 생성 후 is_template_used=false, sequential_planning 완료 | Topic.prompt_user = PromptOptimization.user_prompt, prompt_system = NULL |
+| TC-002      | Integration | isTemplateUsed=false (최적화 기반)    | PromptOptimization에서 prompt 조회 & 저장 | topic 생성 후 is_template_used=false, sequential_planning 완료 | Topic.prompt_user = PromptOptimization.user_prompt, prompt_system = PromptOptimization.output_format |
 | TC-003      | Integration | 템플릿 미존재 (404)                   | 오류 처리 & 롤백 검증                     | template_id=999, is_template_used=true                    | Topic 롤백, 404 NOT_FOUND 반환                              |
 | TC-004      | Integration | 템플릿 권한 없음 (403)                | 접근제어 & 롤백 검증                      | template_id=다른사용자템플릿, is_template_used=true        | Topic 롤백, 403 FORBIDDEN 반환                              |
 | TC-005      | Integration | PromptOptimization 결과 없음          | NULL 처리 & 로깅                        | topic 생성 후 is_template_used=false, prompt_opt 미저장    | Topic.prompt_user = NULL, prompt_system = NULL, WARN 로그   |
 | TC-006      | API         | 전체 흐름 (isTemplateUsed=true)       | 엔드포인트 & 응답 검증                    | POST /api/topics/plan {topic:"AI", template_id:1, is_template_used:true} | 202 Accepted, topic_id 반환, Topic.prompt_user/system 저장됨 |
-| TC-007      | API         | 전체 흐름 (isTemplateUsed=false)      | 엔드포인트 & 응답 검증                    | POST /api/topics/plan {topic:"AI", is_template_used:false} | 202 Accepted, topic_id 반환, Topic.prompt_user 저장, prompt_system=NULL |
+| TC-007      | API         | 전체 흐름 (isTemplateUsed=false)      | 엔드포인트 & 응답 검증                    | POST /api/topics/plan {topic:"AI", is_template_used:false} | 202 Accepted, topic_id 반환, Topic.prompt_user, prompt_system 저장 |
 | TC-008      | Unit        | prompt_user/system 필드 검증          | Pydantic 모델 스키마 확인                | UPDATE topics SET prompt_user=?, prompt_system=?           | 필드 타입: Optional[str], 길이 제약 없음                     |
 | TC-009      | Unit        | 응답시간 검증                         | 2초 제약 준수 확인                       | 프로필링 시작 후 plan_report() 호출                         | elapsed_time < 2000ms                                       |
 
@@ -132,7 +132,7 @@ flowchart TD
 **처리:**
 - Status: `202 Accepted` (기존 대로, non-blocking)
 - Log: `WARNING "[PLAN] PromptOptimization result not found - topic_id={id}"`
-- Action: Topic.prompt_user = NULL, Topic.prompt_system = NULL (저장 안함), 계속 진행
+- Action: Topic.prompt_user = NULL, Topic.prompt_system = NULL, 계속 진행
 
 ### 5.4 prompt 저장 실패 (DB 오류)
 
@@ -168,8 +168,7 @@ Case 1: isTemplateUsed == true
 Case 2: isTemplateUsed == false
   1. PromptOptimizationDB.get_latest_by_topic() 조회 (topic_id 기반)
   2. prompt_user   = prompt_optimization_result.user_prompt (최신)
-  3. prompt_system = NULL (저장 안함)
-     (output_format은 이미 prompt_optimization_result에 저장됨, 중복 저장 불필요)
+  3. prompt_system = prompt_optimization_result.output_format (최신)
 ```
 
 ### 6.3 권한 검증 로직
@@ -216,8 +215,7 @@ Case 2: isTemplateUsed == false
 ### 최종 명확화 (통합)
 
 - ✅ isTemplateUsed=true: templates 테이블에서 prompt_user, **prompt_system 모두** 조회해서 Topic에 저장
-- ✅ isTemplateUsed=false: prompt_optimization_result 테이블에서 user_prompt 조회해서 Topic.prompt_user에 저장 (prompt_system = NULL)
-- ✅ output_format: 이미 prompt_optimization_result에 저장됨 (v2.8, 중복 저장 불필요)
+- ✅ isTemplateUsed=false: prompt_optimization_result 테이블에서 user_prompt, output_format 조회해서 Topic.prompt_user, Topic.prompt_system에 저장
 - ✅ Template 접근제어: 권한 검증 필수 (소유자/관리자만 사용 가능)
   - Template 미존재 → 404 NOT_FOUND + Topic 롤백
   - 권한 없음 → 403 FORBIDDEN + Topic 롤백
@@ -315,9 +313,9 @@ Case 2: isTemplateUsed == false
 
 ### 반영된 피드백
 
-1. ✅ **prompt_system 저장**: isTemplateUsed=false 경우에도 prompt_system 저장 필드를 고려했으나, 실제로는 NULL로 설정 (output_format은 이미 prompt_optimization_result에 저장됨)
+1. ✅ **prompt_system 저장**: isTemplateUsed=false 경우 prompt_optimization_result의 output_format을 prompt_system으로 저장
 
-2. ✅ **output_format 처리**: v2.8 (20251127_prompt_optimization_enhancement.md)에서 이미 prompt_optimization_result에 저장되고 있으므로, topics.plan_report()에서는 별도 저장 불필요. user_prompt만 추출해서 Topic.prompt_user로 저장
+2. ✅ **output_format 처리**: v2.8 (20251127_prompt_optimization_enhancement.md)에서 prompt_optimization_result에 저장된 output_format을 topics.plan_report()에서 추출해서 Topic.prompt_system으로 저장
 
 3. ✅ **접근제어 추가**: Template 사용 시 권한 검증 로직 추가
    - Template 소유자/관리자만 사용 가능
@@ -342,8 +340,8 @@ POST /api/topics/plan
 
    Case B: isTemplateUsed == false
    ├─ PromptOptimizationDB.get_latest_by_topic() 조회
-   ├─ optimization_result.user_prompt 추출 (prompt_system = NULL)
-   ├─ TopicDB.update_topic_prompts(prompt_user=user_prompt, prompt_system=NULL) 저장
+   ├─ optimization_result.user_prompt, optimization_result.output_format 추출
+   ├─ TopicDB.update_topic_prompts(prompt_user=user_prompt, prompt_system=output_format) 저장
 
 4. Return 202 Accepted
 ```
@@ -359,7 +357,6 @@ templates.prompt_system   → Topic.prompt_system
 **isTemplateUsed=false (최적화 기반)**
 ```
 prompt_optimization_result.user_prompt    → Topic.prompt_user
-prompt_optimization_result.output_format  → (이미 저장됨, 중복 불필요)
-Topic.prompt_system                       → NULL
+prompt_optimization_result.output_format  → Topic.prompt_system
 ```
 

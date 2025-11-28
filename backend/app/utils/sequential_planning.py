@@ -8,10 +8,10 @@ Template의 prompt_system을 활용하여 Claude Sequential Planning MCP를 사�
 import json
 import logging
 import time
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 
 from app.utils.claude_client import ClaudeClient
-from app.utils.prompts import get_base_plan_prompt, get_advanced_planner_prompt, get_plan_markdown_rules
+from app.utils.prompts import get_base_plan_prompt, get_advanced_planner_prompt, get_for_plan_source_type_basic_prompt_system, get_for_plan_source_type_basic_prompt_user
 
 logger = logging.getLogger(__name__)
 
@@ -142,69 +142,32 @@ async def _two_step_planning(
     )
 
     prompt_fields = _extract_prompt_fields(first_response_json)
-    prompt_system = _build_prompt_system_from_fields(
+    optimized_prompt_system = _build_prompt_system_from_fields(
         role=prompt_fields["role"],
-        context=prompt_fields["context"]
+        context=prompt_fields["context"],
+        output_format=prompt_fields["output_format"],
     )
-    prompt_user = prompt_fields["task"]
-
-    logger.info(
-        "Sequential Planning - first response converted to markdown (prompt_user_length=%d, sections=%d)",
-        len(prompt_user),
-        len(first_response_json.get("sections", []))
+    
+    optimized_prompt_user = _build_optimized_prompt(
+        prompt_user=optimized_prompt_system,
+        task=prompt_fields["task"]
     )
+    
+    input_prompt_system = get_for_plan_source_type_basic_prompt_system()
+    input_prompt_user = get_for_plan_source_type_basic_prompt_user().replace("{{OPTIMIZED_PROMPT_JSON}}", optimized_prompt_user)
 
-    second_input_prompt = f"""
-이전 분석 결과를 기반으로 상세 계획을 생성하세요:
-
-{prompt_user}
-
-위 분석 결과를 참고하여, 다음 구조의 JSON으로 최종 보고서 계획을 생성하세요:
-{{
-    "title": "보고서 제목",
-    "date": "2025.10.01",
-    "sections": [
-        {{
-            "section_name": "BACKGROUND",
-            "title": "배경 제목",
-            "description": "배경 설명 (3문장)",
-            "order": 1
-        }},
-        {{
-            "section_name": "MAIN_CONTENT",
-            "title": "섹션 제목",
-            "description": "섹션 설명",
-            "order": 2
-        }},
-        {{
-            "section_name": "SUMMARY",
-            "title": "요약 제목",
-            "description": "요약 설명",
-            "order": 3
-        }}{{
-            "section_name": "CONCLUSION",
-            "title": "결론 제목",
-            "description": "결론 설명",
-            "order": 4
-        }}
-    ],
-    "estimated_word_count": 5000,
-    "estimated_sections_count": 5
-}}prompt_fields
-
-응답은 반드시 유효한 JSON만 포함하세요. Markdown 형식이나 추가 설명은 불가합니다.
-"""
     second_response = await _call_sequential_planning(
-        second_input_prompt,
+        input_prompt_user,
         is_web_search=is_web_search,
-        system_prompt=prompt_system
+        system_prompt=input_prompt_system
     )
 
     logger.info("Sequential Planning - second API call completed")
 
     plan_dict = _parse_plan_response(second_response)
-    plan_dict["prompt_user"] = prompt_user
-    plan_dict["prompt_system"] = prompt_system
+    plan_dict["prompt_user"] = input_prompt_user
+    plan_dict["prompt_system"] = input_prompt_system
+
 
     if topic_id is not None:
         try:
@@ -220,7 +183,7 @@ async def _two_step_planning(
             PromptOptimizationDB.create(
                 topic_id=topic_id,
                 user_id=int(user_id) if isinstance(user_id, str) else user_id,
-                user_prompt=prompt_user,
+                user_prompt=optimized_prompt_system,
                 hidden_intent=prompt_fields.get("hidden_intent"),
                 emotional_needs=emotional_needs,
                 underlying_purpose=prompt_fields.get("underlying_purpose"),
@@ -298,7 +261,7 @@ def _extract_json_from_response(response_text: str) -> str:
 
 
 async def _call_sequential_planning(
-    input_prompt: str,
+    user_prompt: str,
     is_web_search: bool = False,
     system_prompt: Optional[str] = None
 ) -> str:
@@ -306,7 +269,7 @@ async def _call_sequential_planning(
     Claude API를 호출하여 Sequential Planning 실행
 
     Args:
-        input_prompt: 입력 프롬프트
+        user_prompt: 입력 받은 사용자 프롬프트
         is_web_search: Claude 웹 검색 활성화 여부
         system_prompt: Claude system prompt (없으면 기본값 사용)
 
@@ -327,7 +290,7 @@ async def _call_sequential_planning(
         messages = [
             {
                 "role": "user",
-                "content": input_prompt
+                "content": user_prompt
             }
         ]
 
@@ -349,7 +312,6 @@ async def _call_sequential_planning(
     except Exception as e:
         logger.error(f"Claude API call failed - error={str(e)}", exc_info=True)
         raise SequentialPlanningError(f"Claude API call failed: {str(e)}")
-
 
 def _parse_plan_response(plan_text: str) -> Dict[str, Any]:
     """
@@ -378,8 +340,15 @@ def _parse_plan_response(plan_text: str) -> Dict[str, Any]:
             logger.error(f"Empty response after cleaning - original_length={len(plan_text)}")
             raise SequentialPlanningError("Received empty response from Claude API")
 
-        # JSON 파싱
-        plan_json = json.loads(cleaned_text)
+        # JSON 파싱 (후행 텍스트가 있어도 첫 번째 객체만 파싱)
+        decoder = json.JSONDecoder()
+        plan_json, end_idx = decoder.raw_decode(cleaned_text)
+        trailing = cleaned_text[end_idx:].strip()
+        if trailing:
+            logger.debug("Trailing non-JSON content after plan payload ignored")
+
+        # 새 아웃라인(JSON bullet) 형식 → 기존 sections 스키마로 정규화
+        plan_json = _normalize_plan_json(plan_json)
 
         # Sections 추출
         sections = plan_json.get("sections", [])
@@ -396,6 +365,83 @@ def _parse_plan_response(plan_text: str) -> Dict[str, Any]:
         raise SequentialPlanningError(f"Failed to parse plan response: {str(e)}")
 
 
+OUTLINE_SECTION_ORDER = [
+    "TITLE",
+    "DATE",
+    "BACKGROUND",
+    "MAIN_CONTENT",
+    "SUMMARY",
+    "CONCLUSION",
+]
+
+SECTION_TITLE_LABELS = {
+    "TITLE": "제목",
+    "DATE": "날짜",
+    "BACKGROUND": "배경",
+    "MAIN_CONTENT": "주요 내용",
+    "SUMMARY": "요약",
+    "CONCLUSION": "결론",
+}
+
+
+def _normalize_plan_json(plan_json: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    두 번째 콜(Call#2)에서 반환되는 bullet 기반 아웃라인 JSON을
+    기존 sections 스키마(title/description/key_points/order)로 변환한다.
+
+    기존 sections 포맷이 이미 있으면 그대로 반환한다.
+    """
+
+    sections = plan_json.get("sections")
+    if isinstance(sections, list) and sections:
+        return plan_json
+
+    has_outline_keys = any(key in plan_json for key in OUTLINE_SECTION_ORDER)
+    if not has_outline_keys:
+        return plan_json
+
+    normalized_sections: List[Dict[str, Any]] = []
+    normalized_title = plan_json.get("title")
+
+    for key in OUTLINE_SECTION_ORDER:
+        if key not in plan_json:
+            continue
+
+        bullets = _coerce_to_list(plan_json.get(key))
+        if not bullets:
+            continue
+
+        if key == "TITLE" and not normalized_title:
+            normalized_title = bullets[0]
+
+        section_title = SECTION_TITLE_LABELS.get(key, key)
+        description = bullets[0] if bullets else ""
+        key_points = bullets[1:] if len(bullets) > 1 else []
+
+        normalized_sections.append({
+            "title": section_title,
+            "description": description,
+            "key_points": key_points,
+            "order": len(normalized_sections) + 1
+        })
+
+    return {
+        **plan_json,
+        "title": normalized_title or "보고서 계획",
+        "sections": normalized_sections,
+        "estimated_word_count": plan_json.get("estimated_word_count", 0),
+    }
+
+
+def _coerce_to_list(raw_value: Any) -> List[str]:
+    """단일 값/리스트를 문자열 리스트로 보정한다."""
+    if isinstance(raw_value, list):
+        return [str(item) for item in raw_value if item is not None]
+    if raw_value is None:
+        return []
+    return [str(raw_value)]
+
+
 def _build_text_plan(plan_json: Dict[str, Any]) -> str:
     """
     JSON 계획을 plan text로 변환
@@ -408,7 +454,9 @@ def _build_text_plan(plan_json: Dict[str, Any]) -> str:
     """
     title = plan_json.get("title", "보고서 계획")
     sections = plan_json.get("sections", [])
-    estimated_word_count = plan_json.get("estimated_word_count", 0)
+    #TODO : 우선도 낮음, plan 시 estimated_word_count가 없음 임시 조치.
+    #estimated_word_count = plan_json.get("estimated_word_count", 8000)
+    estimated_word_count = "8000"
 
     lines = [
         f"{title}",
@@ -482,8 +530,20 @@ def _extract_prompt_fields(first_response_json: Dict[str, Any]) -> Dict[str, Any
         or first_response_json.get("framework")
     )
 
-    # output_format json 형태의 string 으로 파싱
-    output_format = first_response_json.get("output_format", {})
+    output_format_raw = first_response_json.get("output_format")
+    if isinstance(output_format_raw, dict):
+        output_format_lines = []
+        for key, value in output_format_raw.items():
+            if isinstance(value, (dict, list)):
+                value_str = json.dumps(value, ensure_ascii=False)
+            else:
+                value_str = str(value)
+            output_format_lines.append(f"""{key}:\n{value_str}""")
+        output_format = "\n".join(output_format_lines)
+    elif output_format_raw is None:
+        output_format = ""
+    else:
+        output_format = str(output_format_raw)
 
     task = (
         restructured.get("task")
@@ -512,17 +572,33 @@ def _extract_prompt_fields(first_response_json: Dict[str, Any]) -> Dict[str, Any
     }
 
 
-def _build_prompt_system_from_fields(role: str, context: str) -> str:
+def _build_prompt_system_from_fields(role: str, context: str, output_format: str) -> str:
     """
-    role/context를 system prompt 상단에 반영하고 기본 마크다운 규칙을 이어붙인다.
+    role/context/output_format를 system prompt 상단에 반영하고 기본 마크다운 규칙을 이어붙인다.
     """
     role_text = role or "전문가"
     context_text = context or "맥락 정보가 제공되지 않았습니다."
 
     return f"""{role_text}
 
-# 맥락
+# 맥락 
 {context_text}
 
-## 마크다운 작성 규칙
-{get_plan_markdown_rules()}"""
+---
+
+## output_format
+{output_format}
+
+> 모든 대답은 자연스러운 한국어로 작성되어야 합니다.
+
+"""
+
+def _build_optimized_prompt(prompt_user: str, task: str) -> str:
+    """
+    role/context/output_format를 system prompt 상단에 반영하고 기본 마크다운 규칙을 이어붙인다.
+    """
+    return f"""{prompt_user}
+## TASK
+{task}
+
+"""

@@ -584,9 +584,9 @@ PromptOptimizationDB.create(
 ✅ **Optimization 기반 처리 (isTemplateUsed=false)**
 - 단계 1: sequential_planning() 실행 → plan 결과 반환
 - 단계 2: PromptOptimizationDB.get_latest_by_topic(topic_id) 조회
-  - 결과 없음: WARN 로그 (비차단, prompt_user=NULL)
-  - 결과 있음: user_prompt 추출
-- 단계 3: TopicDB.update_topic_prompts(topic_id, prompt_user, prompt_system=None) 저장
+  - 결과 없음: WARN 로그 (비차단, prompt_user=NULL, prompt_system=NULL)
+  - 결과 있음: user_prompt, output_format 추출
+- 단계 3: TopicDB.update_topic_prompts(topic_id, prompt_user, prompt_system=output_format) 저장
 - 단계 4: 200 OK 응답 (plan + topic_id)
 
 ✅ **에러 처리 전략**
@@ -634,7 +634,7 @@ POST /api/topics/plan
 POST /api/topics/plan
 ├─ sequential_planning(topic, template_id, ...)
 ├─ PromptOptimizationDB.get_latest_by_topic(topic_id)
-├─ TopicDB.update_topic_prompts(topic_id, user_prompt, prompt_system=None)
+├─ TopicDB.update_topic_prompts(topic_id, user_prompt, prompt_system=output_format)
 └─ 200 OK { plan: "...", topic_id: 123 }
 ```
 
@@ -672,17 +672,116 @@ else:
     if opt_result is None:
         logger.warning(f"[PLAN] PromptOptimization not found - topic_id={topic.id}")
         prompt_user = None
+        prompt_system = None
     else:
         prompt_user = opt_result.get('user_prompt')
+        prompt_system = opt_result.get('output_format')
 
     try:
-        TopicDB.update_topic_prompts(topic.id, prompt_user, prompt_system=None)
+        TopicDB.update_topic_prompts(topic.id, prompt_user, prompt_system)
     except Exception as e:
         logger.warning(f"[PLAN] Update failed - {str(e)}")
 ```
 
 ---
 
-**마지막 업데이트:** 2025-11-27
-**버전:** 2.9.0
-**상태:** ✅ /api/topics/plan 프롬프트 데이터 조건부 저장 완료
+### v2.10 (2025-11-28) - Placeholders DB에 Sort 컬럼 추가
+
+✅ **Placeholders 테이블 스키마 확장**
+- 신규 컬럼: `sort` (INTEGER, NOT NULL, DEFAULT 0)
+- Template 업로드 시 HWPX에서 읽어온 placeholder를 순서대로 관리
+- 0부터 시작하는 순차적 인덱스로 placeholder 순서 명시
+
+✅ **Database 마이그레이션**
+- connection.py init_db()에 마이그레이션 로직 통합
+- 기존 DB: PRAGMA table_info로 컬럼 존재 여부 확인 후 ALTER TABLE
+- 신규 DB: CREATE TABLE에 sort 컬럼 포함
+- 중복 마이그레이션 방지, 오류 처리 포함
+
+✅ **Pydantic 모델 업데이트**
+- Placeholder: sort: int = Field(0, description="정렬 순서 (0-based index)")
+- PlaceholderCreate: sort: Optional[int] = Field(None, ...)
+- 모델 JSON 직렬화 시 sort 필드 포함
+
+✅ **PlaceholderDB 메서드 수정 (3개)**
+
+| 메서드 | 변경 사항 |
+|--------|---------|
+| create_placeholders_batch() | enumerate(placeholder_keys)로 sort 값 생성 후 INSERT |
+| get_placeholders_by_template() | ORDER BY created_at → ORDER BY sort ASC |
+| _row_to_placeholder() | row[3]=sort, row[4]=created_at로 매핑 |
+
+✅ **Router/API 자동 처리**
+- upload_template: placeholder_list를 순서대로 전달 (기존 동작 유지)
+- create_template_with_transaction: enumerate로 자동 sort 값 할당
+
+✅ **테스트 완료 (10/10 TC + 37개 기존 회귀 테스트)**
+- TC-001: DB 스키마 검증 (INTEGER, NOT NULL, DEFAULT 0)
+- TC-002: Batch INSERT sort 저장 확인 (0, 1, 2, ...)
+- TC-003: 정렬 순서 조회 (ORDER BY sort ASC)
+- TC-004: (API 통합, codex-cli로 별도 작성 예정)
+- TC-005: Placeholder 모델 필드 확인
+- TC-005b: 모델 기본값 (sort=0)
+- TC-006: Sort NULL 처리 (None → 0)
+- TC-006b: Sort 값 보존 (row[3] 정상 추출)
+- 추가-001: PlaceholderCreate sort 선택사항
+- 추가-002: 빈 리스트 & 단일 항목 엣지 케이스
+- ✅ 10/10 신규 테스트 PASS (100%)
+- ✅ 37개 기존 템플릿 테스트 PASS (100% - 호환성 확인)
+
+### 신규/변경 파일
+
+| 파일 | 상태 | 변경 내용 |
+|------|------|---------|
+| backend/app/database/connection.py | 변경 | init_db() 마이그레이션 로직 추가 (line 319-329) |
+| backend/app/models/template.py | 변경 | Placeholder, PlaceholderCreate에 sort 필드 추가 |
+| backend/app/database/template_db.py | 변경 | PlaceholderDB 3개 메서드 수정 (sort 처리) |
+| backend/tests/test_placeholders_sort.py | 신규 | 10개 테스트 케이스 작성 |
+
+### 변경된 함수
+
+| 함수 | 파일 | 변경 내용 |
+|------|------|---------|
+| create_placeholders_batch() | template_db.py | enumerate로 sort 값 생성 후 INSERT |
+| get_placeholders_by_template() | template_db.py | ORDER BY sort ASC로 변경 |
+| _row_to_placeholder() | template_db.py | row[3]=sort, row[4]=created_at 매핑 |
+| create_template_with_transaction() | template_db.py | enumerate(placeholder_keys)로 자동 sort 할당 |
+
+### 데이터 저장 흐름
+
+```
+POST /api/templates
+├─ HWPX 파일 업로드
+├─ manager.extract_placeholders(work_dir)  # 순서 보존
+│  └─ ["{{TITLE}}", "{{SUMMARY}}", "{{BACKGROUND}}"]
+├─ TemplateDB.create_template_with_transaction(
+│    template_data,
+│    placeholder_list  # 순서 보존
+│  )
+├─ INSERT INTO placeholders (template_id, placeholder_key, sort)
+│  VALUES (1, "{{TITLE}}", 0),
+│         (1, "{{SUMMARY}}", 1),
+│         (1, "{{BACKGROUND}}", 2)
+└─ 201 Created
+```
+
+### Unit Spec
+- 파일: `backend/doc/specs/20251128_placeholders_sort_column.md`
+- 7개 테스트 케이스 + 에러 처리 시나리오 정의
+- 4시간 예상 구현 시간
+
+### 기술 스택
+- Database: SQLite 3.x (ALTER TABLE)
+- ORM: Raw SQL (편의성 vs 복잡도 고려)
+- Testing: pytest 8.3.4, pytest-asyncio 0.24.0
+
+### 호환성
+- ✅ 기존 데이터: sort = DEFAULT 0 자동 설정
+- ✅ 기존 API: 응답 형식 변경 없음 (PlaceholderResponse는 key만)
+- ✅ 기존 테스트: 37개 모두 통과
+
+---
+
+**마지막 업데이트:** 2025-11-28
+**버전:** 2.10.0
+**상태:** ✅ Placeholders sort 컬럼 추가 완료

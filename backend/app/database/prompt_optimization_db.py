@@ -86,6 +86,13 @@ class PromptOptimizationDB:
                 emotional_needs_payload = emotional_needs
             else:
                 emotional_needs_payload = json.dumps(emotional_needs, ensure_ascii=False)
+        
+        output_format_needs_payload: Optional[str] = None
+        if output_format is not None:
+            if isinstance(output_format, str):
+                output_format_needs_payload = output_format
+            else:
+                output_format_needs_payload = json.dumps(output_format, ensure_ascii=False)
 
         hidden_intent_value = _to_text(hidden_intent)
         underlying_purpose_value = _to_text(underlying_purpose)
@@ -139,7 +146,7 @@ class PromptOptimizationDB:
                     formality_value,
                     confidence_value,
                     decision_value,
-                    output_format or None,
+                    output_format_needs_payload,
                     original_topic or None,
                     role_value,
                     context_value,

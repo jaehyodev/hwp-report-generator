@@ -183,9 +183,9 @@ def map_optimized_to_claude_payload(
         backend/app/utils/prompt_optimizer.py::map_optimized_to_claude_payload()
 
     설명:
-        고도화 결과(role, context, task)와 원본 프롬프트를
+        고도화 결과(role, context, task, output_format)와 원본 프롬프트를
         Claude API 호출용 구조로 변환합니다.
-        System 메시지: role + # CONTEXT 섹션
+        System 메시지: role + # CONTEXT 섹션 + output_format 
         User 메시지: task + 원래 요청
 
     파라미터:
@@ -218,6 +218,7 @@ def map_optimized_to_claude_payload(
     role = getattr(optimization_result, "role", None)
     context = getattr(optimization_result, "context", None)
     task = getattr(optimization_result, "task", None)
+    output_format = getattr(optimization_result, "output_format", None)
     model_name = model.strip() if isinstance(model, str) and model.strip() else getattr(optimization_result, "model_name", None)
 
     for field_name, value in [("role", role), ("context", context), ("task", task)]:
@@ -227,7 +228,7 @@ def map_optimized_to_claude_payload(
     if not isinstance(model_name, str) or not model_name:
         raise ValueError("Claude 모델명이 설정되어야 합니다.")
 
-    system_message = f"{role.strip()}\n\n# CONTEXT\n{context.strip()}"
+    system_message = f"{role.strip()}\n\n# CONTEXT\n{context.strip()}\n## output_format\n{output_format.strip()}"
     user_message = (
         "아래 작업을 수행하세요:\n\n"
         f"{task.strip()}\n\n---\n\n"

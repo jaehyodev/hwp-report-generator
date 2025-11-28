@@ -56,11 +56,6 @@ class ClaudeClient:
         self.last_output_tokens = 0
         self.last_total_tokens = 0
 
-        logger.info(f"ClaudeClient 초기화 완료")
-        logger.info(f"  - 기본 모델: {self.model}")
-        logger.info(f"  - 빠른 모델: {self.fast_model}")
-        logger.info(f"  - 추론 모델: {self.reasoning_model}")
-
     def generate_report(
         self,
         topic: str,
@@ -85,7 +80,34 @@ class ClaudeClient:
             >>> md_content.startswith("# ")
             True
         """
+
+        markdown_rule = f"""이 보고서는 **아래 모든 규칙을 절대적으로 준수하여 작성**해야 합니다.
+
+## **Markdown 절대 규칙**
+
+1. `#`(H1)은 **보고서 전체에서 단 1회만 사용**한다.
+2. 모든 `##`(H2)는 **반드시 번호 + 마침표 + 제목**의 형태로 작성한다.
+
+* 예시: `##1. 제목`, `##2. 내용`
+3. H2 제목은 **13자 이하**로 작성한다.
+
+* placeholder 내용이 길 경우, 반드시 13자 이하로 **자동 요약하여 제목으로 사용**한다.
+4. 인용( `>` )은 **한 단계만 사용**하며, **중첩 금지**다.
+5. unordered list(`-`)와 ordered list(`1.`)는 모두 **최대 2단계까지만 사용**한다.
+6. 다음 요소는 **절대 사용하지 않는다:**
+* Table
+* Code block
+* Checkbox
+* Link(URL 포함 모든 형태)
+* Image
+* Border(테두리 강조 블록)
+7. 아래 템플릿 외의 Markdown heading 은 **추가하지 않는다.**
+8. 아래 “섹션별 상세 지침”은 설명용이며 **출력에 포함하지 않는다.**
+9. `###`(H3)이 필요한 경우 ordered list(1., 2. ...)로 대처한다. (H3, H4, ... 사용되지 않는지 점검한다.)
+10. 이모티콘을 사용하지 않는다.
+        """
         base_system_prompt = system_prompt or get_default_report_prompt()
+        system_prompt = base_system_prompt  + "\n\n" + markdown_rule
 
         user_prompt_parts: list[str] = [f"보고서 주제: {topic}".strip()]
         if plan_text:
@@ -101,14 +123,14 @@ class ClaudeClient:
 
         try:
             logger.info(f"Claude API 호출 시작 - 주제: {topic}")
-            logger.info(f"사용 모델: {self.model}")
+            logger.info(f"사용 모델: {self.fast_model}")
             logger.info(f"최대 토큰: {self.max_tokens}")
             logger.info(f"웹 검색 사용: {isWebSearch}")
 
             api_params = {
-                "model": self.model,
+                "model": self.fast_model,
                 "max_tokens": self.max_tokens,
-                "system": base_system_prompt,
+                "system": system_prompt,
                 "messages": [
                     {"role": "user", "content": user_prompt}
                 ]

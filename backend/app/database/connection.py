@@ -167,6 +167,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             template_id INTEGER NOT NULL,
             placeholder_key TEXT NOT NULL,
+            sort INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (template_id) REFERENCES templates (id) ON DELETE CASCADE
         )
@@ -312,6 +313,18 @@ def init_db():
     ):
         try:
             cursor.execute(f"ALTER TABLE prompt_optimization_result ADD COLUMN {column_def}")
+        except sqlite3.OperationalError:
+            pass  # 컬럼이 이미 존재하면 무시
+
+    # placeholders 테이블 마이그레이션: sort 컬럼 추가 (v2.10+)
+    # PRAGMA table_info로 컬럼 존재 여부 확인 후 추가
+    cursor.execute("PRAGMA table_info(placeholders)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'sort' not in columns:
+        try:
+            cursor.execute("""
+                ALTER TABLE placeholders ADD COLUMN sort INTEGER NOT NULL DEFAULT 0
+            """)
         except sqlite3.OperationalError:
             pass  # 컬럼이 이미 존재하면 무시
 

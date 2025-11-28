@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict
 
 
+#TODO: 기능필요 여부 확인필요. llm 에서 받아온 값을 md 파일에 저장할 때 재대로 저장이 안되는 문제있음. 
 def build_report_md(parsed: Dict[str, str]) -> str:
     """Claude 생성 결과(dict)를 Markdown 문서로 변환.
 

@@ -8,6 +8,7 @@ TC-FUNC-007: sequential_planning (템플릿) - is_template_used=True
 TC-FUNC-008: sequential_planning (Planner) - is_template_used=False
 TC-FUNC-009: _parse_plan_response - JSON 파싱 및 마크다운 변환
 """
+import json
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -232,6 +233,45 @@ class TestParsePlanResponse:
         # Then: Result has empty sections array
         assert result["sections"] == []
         assert "빈 계획" in result["plan"]
+
+    def test_parse_plan_response_outline_schema_mapping(self):
+        """Call#2 bullet 아웃라인(JSON)도 기존 반환 형태로 변환된다"""
+        outline_json = json.dumps({
+            "TITLE": [
+                "AI 시장 분석: 2025년 성장 동향, 경쟁 구도, 전략적 기회 평가",
+                "생성형 AI에서 엔터프라이즈 AI까지 글로벌 시장의 현황과 미래",
+            ],
+            "DATE": ["2025년 11월 27일"],
+            "BACKGROUND": ["시장 정의", "성장 배경"],
+            "MAIN_CONTENT": ["세분화 분석", "경쟁 동향"],
+            "SUMMARY": ["현 상태", "주요 기회"],
+            "CONCLUSION": ["전략적 위상", "리스크"],
+        })
+
+        result = _parse_plan_response(outline_json)
+
+        assert "plan" in result
+        assert len(result["sections"]) == 6
+        assert result["sections"][0]["title"] == "제목"
+        assert result["sections"][0]["description"].startswith("AI 시장 분석")
+        assert result["sections"][1]["title"] == "날짜"
+        assert result["sections"][3]["title"] == "주요 내용"
+        assert "세분화 분석" in result["sections"][3]["description"]
+
+    def test_parse_plan_response_ignores_trailing_text(self):
+        """JSON 뒤에 설명 텍스트가 이어져도 첫 JSON만 파싱한다"""
+        raw = """{
+  "TITLE": ["제목"],
+  "DATE": ["2025-01-01"]
+}
+
+---
+
+추가 설명이 이어집니다."""
+
+        result = _parse_plan_response(raw)
+
+        assert result["sections"][0]["title"] == "제목"
 
 
 class TestSequentialPlanningValidation:

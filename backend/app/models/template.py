@@ -19,12 +19,14 @@ class PlaceholderCreate(PlaceholderBase):
     """플레이스홀더 생성 모델."""
 
     template_id: int = Field(..., description="템플릿 ID")
+    sort: Optional[int] = Field(None, description="정렬 순서 (0-based index)")
 
 
 class Placeholder(PlaceholderCreate):
     """플레이스홀더 응답 모델."""
 
     id: int
+    sort: int = Field(0, description="정렬 순서 (0-based index)")
     created_at: datetime
 
     class Config:
