@@ -1,5 +1,5 @@
-import React from 'react'
 import {Button, Space} from 'antd'
+import styles from './OutlineActionButtons.module.css'
 
 interface OutlineActionButtonsProps {
     onGenerateReport: () => void
@@ -19,9 +19,9 @@ export const OutlineActionButtons = ({onGenerateReport, onContinue, showButtons}
     }
 
     return (
-        <div style={{marginTop: 16, paddingTop: 16, borderTop: '1px solid #e8e8e8'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '2rem'}}>
-                <span style={{fontWeight: 500}}>보고서를 만드시겠습니까?</span>
+        <div className={styles.outlineBtnContainer}>
+            <div>
+                <span>보고서를 만드시겠습니까?</span>
                 <Space>
                     <Button onClick={onContinue}>수정</Button>
                     <Button type="primary" onClick={onGenerateReport}>
