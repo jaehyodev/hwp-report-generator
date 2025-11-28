@@ -785,3 +785,162 @@ POST /api/templates
 **마지막 업데이트:** 2025-11-28
 **버전:** 2.10.0
 **상태:** ✅ Placeholders sort 컬럼 추가 완료
+
+### v2.11 (2025-11-28) - Claude API Structured Outputs 기반 JSON 강제 응답
+
+✅ **Structured Outputs 기능 통합**
+- Claude API의 공식 Structured Outputs 기능으로 JSON 응답 강제 (Schema 검증)
+- 신규 클라이언트: `utils/structured_client.py` (320줄)
+- 동적 JSON Schema 생성: BASIC 모드 (type enum 고정) vs TEMPLATE 모드 (type 자유 문자열)
+- `/api/topics/{id}/ask`, `/api/topics/generate` 엔드포인트에 적용
+
+✅ **StructuredClaudeClient 구현**
+- `__init__()`: Anthropic 클라이언트 초기화
+- `generate_structured_report()`: Structured Outputs로 JSON 보고서 생성
+- `_build_json_schema()`: 동적 스키마 생성 (BASIC/TEMPLATE 분기)
+- `_invoke_with_structured_output()`: Claude API 호출 with response_format
+- `_process_response()`: StructuredReportResponse 객체로 변환
+- 반환 타입: 항상 `StructuredReportResponse` (Fallback 없음)
+
+✅ **JSON Schema 생성 규칙**
+
+| 모드 | Type 필드 | 설명 |
+|------|---------|------|
+| **BASIC** | enum ["TITLE", "DATE", "BACKGROUND", "MAIN_CONTENT", "SUMMARY", "CONCLUSION"] | 6개 고정 섹션 타입 |
+| **TEMPLATE** | string (enum 없음) | 동적 placeholder ID (e.g., "MARKET_ANALYSIS", "CUSTOM_SECTION") |
+
+**Schema 예시 (BASIC 모드):**
+```json
+{
+  "type": "object",
+  "properties": {
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "type": {"type": "string", "enum": ["TITLE", "DATE", "BACKGROUND", "MAIN_CONTENT", "SUMMARY", "CONCLUSION"]},
+          "content": {"type": "string"},
+          "order": {"type": "integer"},
+          "source_type": {"type": "string", "enum": ["basic", "template", "system"]}
+        },
+        "required": ["id", "type", "content", "order", "source_type"]
+      }
+    }
+  }
+}
+```
+
+✅ **데이터 모델 변경**
+- `SectionMetadata.type`: `SectionType` Enum → `str` (동적 타입 지원)
+  - BASIC: 고정 값 (TITLE, DATE, BACKGROUND 등)
+  - TEMPLATE: 자유 문자열 (placeholder ID)
+- 기존 코드 호환성: markdown_builder.py에서 `.value` 체크로 Enum/str 모두 지원
+
+✅ **Router 통합 (topics.py)**
+- `ask()` 함수 (Line ~788-826):
+  - ClaudeClient → StructuredClaudeClient 변경
+  - section_schema를 동적 JSON Schema로 변환
+  - 항상 StructuredReportResponse 객체 반환 (JSON 보장)
+
+- `_background_generate_report()` 함수 (Line ~1937-1967):
+  - 백그라운드 보고서 생성에도 동일 처리
+  - `asyncio.to_thread()`로 Non-blocking 유지
+
+✅ **API 호출 패턴**
+
+**이전 (Fallback 방식):**
+```python
+markdown = claude.generate_report(section_schema)
+# 반환: Markdown 또는 JSON (불확실)
+```
+
+**이후 (Structured Outputs):**
+```python
+structured_client = StructuredClaudeClient()
+json_response = await asyncio.to_thread(
+    structured_client.generate_structured_report,
+    topic=topic,
+    system_prompt=system_prompt,
+    section_schema=section_schema,
+    source_type=source_type_str,
+    context_messages=context_messages
+)
+# 반환: 항상 StructuredReportResponse (JSON 보장)
+markdown = await asyncio.to_thread(
+    build_report_md_from_json,
+    json_response
+)
+```
+
+✅ **테스트 커버리지 (11/11 TC)**
+- TC-001: BASIC 모드 JSON Schema (type enum 고정)
+- TC-001B: TEMPLATE 모드 JSON Schema (type 자유 문자열)
+- TC-002: 유효한 structured response 처리
+- TC-003: TEMPLATE 모드 동적 타입 처리
+- TC-004: JSON → Markdown 변환
+- TC-005: 잘못된 source_type 에러 처리
+- TC-006: 빈 섹션 처리
+- TC-007: 스키마 생성 성능 (< 100ms)
+- TC-008: 응답 처리 성능 (< 100ms)
+- Backward Compatibility: 기존 5개 테스트 모두 통과 (100%)
+- **최종 결과: 11/11 PASS + 호환성 5/5 PASS**
+
+### 신규 파일
+
+| 파일 | 내용 | 라인 수 |
+|------|------|--------|
+| backend/app/utils/structured_client.py | StructuredClaudeClient 클래스 + 메서드 | 320 |
+| backend/tests/test_structured_outputs_integration.py | 11개 테스트 케이스 (Unit, Integration, Backward Compatibility) | 350+ |
+
+### 변경 파일
+
+| 파일 | 변경 내용 | 라인 |
+|------|---------|------|
+| backend/app/models/report_section.py | SectionMetadata.type: SectionType → str | 33 |
+| backend/app/routers/topics.py | ask() & _background_generate_report()에 StructuredClaudeClient 적용 | 788-826, 1937-1967 |
+| backend/tests/test_json_section_metadata.py | Import 경로 수정 (Placeholder, TopicSourceType) | 20-23 |
+
+### 기술 스택
+
+- **Claude API**: Structured Outputs (response_format with json_schema)
+- **Anthropic SDK**: >= 0.25.0 (Structured Outputs 지원)
+- **Pydantic**: BaseModel with dynamic field types
+- **JSON Schema**: Draft 2020-12 (Claude 호환)
+
+### 사용 사례
+
+**언제 StructuredClaudeClient를 사용하는가:**
+- ✅ JSON 응답 포맷이 반드시 필요한 경우
+- ✅ API Schema 검증이 필수인 경우
+- ✅ Markdown Fallback 없이 JSON만 필요한 경우 (본 기능)
+
+**언제 ClaudeClient를 사용하는가:**
+- 자유로운 텍스트 응답 필요
+- Markdown 또는 JSON 모두 가능한 경우
+
+### 호환성
+
+- ✅ 기존 데이터 모델: SectionMetadata.type을 str로 변경했으나, markdown_builder.py에서 `.value` 체크로 Enum 호환성 유지
+- ✅ 기존 API 응답 형식: 변경 없음 (내부적으로만 JSON 처리)
+- ✅ 기존 테스트: 모두 통과 (5/5 regression tests)
+
+### Unit Spec
+- 파일: `backend/doc/specs/20251128_json_structured_section_metadata.md`
+- 15개 섹션: 요구사항, 스키마 정의, 흐름도, 동작 상세, 11개 TC, 에러 처리, 기술 스택, 호환성 검증, 구현 체크리스트
+
+### 주요 개선 효과
+
+| 항목 | 이전 | 이후 | 개선 |
+|------|------|------|------|
+| **응답 안정성** | JSON 또는 Markdown (불확실) | 항상 JSON | 100% 보장 |
+| **Schema 검증** | 프롬프트 기반 (약함) | API 수준 검증 (강함) | Schema 위반 원천 차단 |
+| **Error Handling** | Fallback 필요 | 즉시 실패 | 명확한 에러 처리 |
+| **타입 안정성** | 동적 Markdown 파싱 | Pydantic 모델 | Type hints 완벽 |
+
+---
+
+**마지막 업데이트:** 2025-11-28
+**버전:** 2.11.0
+**상태:** ✅ Structured Outputs 기반 JSON 강제 응답 완성

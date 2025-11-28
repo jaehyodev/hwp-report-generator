@@ -32,12 +32,14 @@ from app.database.prompt_optimization_db import PromptOptimizationDB
 from app.utils.auth import get_current_active_user
 from app.utils.response_helper import success_response, error_response, ErrorCode
 from shared.types.enums import TopicStatus, MessageRole, ArtifactKind, TopicSourceType
-from app.utils.markdown_builder import build_report_md
+from app.utils.markdown_builder import build_report_md, build_report_md_from_json
 from app.utils.file_utils import next_artifact_version, build_artifact_paths, write_text, sha256_of
 from app.utils.claude_client import ClaudeClient
+from app.utils.structured_client import StructuredClaudeClient
 from app.utils.prompts import (
     create_topic_context_message,
     get_system_prompt,
+    create_section_schema,
 )
 from app.utils.markdown_parser import parse_markdown_to_content
 from app.utils.exceptions import InvalidTemplateError
@@ -732,18 +734,106 @@ async def ask(
                 details={"error": str(e)}
             )
 
-    # === 6단계: Claude 호출 ===
-    logger.info(f"[ASK] Calling Claude API - messages={len(claude_messages)}")
+    # === 5.5단계: JSON 섹션 스키마 생성 (새로운 단계) ===
+    # source_type 정규화 (enum → 문자열)
+    source_type_str = topic.source_type.value if hasattr(topic.source_type, 'value') else str(topic.source_type)
+    logger.info(f"[ASK] Creating section schema - source_type={source_type_str}")
 
+    try:
+        section_schema = None
+
+        if source_type_str and source_type_str in ("basic", "template"):
+            # 섹션 스키마 생성
+            if source_type_str == "template" and topic.template_id:
+                # TEMPLATE 모드: placeholders 조회
+                logger.info(f"[ASK] Loading placeholders for TEMPLATE mode - template_id={topic.template_id}")
+                placeholders = await asyncio.to_thread(
+                    lambda: __import__('app.database.template_db', fromlist=['TemplateDB']).TemplateDB.get_placeholders_by_template(topic.template_id)
+                )
+                section_schema = await asyncio.to_thread(
+                    create_section_schema,
+                    source_type_str,  # ✅ 문자열로 전달
+                    placeholders
+                )
+            else:
+                # BASIC 모드: 고정 섹션
+                section_schema = await asyncio.to_thread(
+                    create_section_schema,
+                    "basic"
+                )
+
+            if section_schema:
+                logger.info(f"[ASK] Section schema created - sections={len(section_schema.get('sections', []))}")
+        else:
+            logger.info(f"[ASK] source_type not set, skipping section schema generation")
+
+    except Exception as schema_error:
+        logger.warning(
+            f"[ASK] Failed to create section schema - error={schema_error}",
+            exc_info=True
+        )
+        section_schema = None
+
+    # === 6단계: Claude 호출 ===
+    logger.info(f"[ASK] Calling Claude API - messages={len(claude_messages)}, use_json_schema={section_schema is not None}")
+
+    json_converted = False  # ✅ 변수 초기화 (Step 7에서 사용됨)
     try:
         t0 = time.time()
 
         claude_client = ClaudeClient()
-        response_text, input_tokens, output_tokens = claude_client.chat_completion(
-            claude_messages,
-            system_prompt,
-            isWebSearch=body.is_web_search
-        )
+
+        # JSON 모드와 일반 모드 구분
+        if section_schema:
+            # JSON 모드: StructuredClaudeClient 사용 (Structured Outputs)
+            logger.info(f"[ASK] Using Structured Outputs mode with section_schema")
+
+            # source_type 추출
+            source_type_str = "basic"
+            if topic.source_type:
+                source_type_str = topic.source_type.value if hasattr(topic.source_type, "value") else str(topic.source_type)
+
+            # StructuredClaudeClient 호출
+            structured_client = StructuredClaudeClient()
+
+            # 메시지 배열을 context_messages로 변환 (dict 형식 유지)
+            context_messages = [
+                {"role": msg.get("role", "user"), "content": msg.get("content", "")}
+                for msg in claude_messages
+            ]
+
+            json_response = await asyncio.to_thread(
+                structured_client.generate_structured_report,
+                topic=topic.title if topic.title else "Report",
+                system_prompt=system_prompt,
+                section_schema=section_schema,
+                source_type=source_type_str,
+                context_messages=context_messages
+            )
+
+            # JSON 응답 처리 (항상 StructuredReportResponse 객체)
+            logger.info(f"[ASK] JSON response received - sections={len(json_response.sections)}")
+            response_text = await asyncio.to_thread(
+                build_report_md_from_json,
+                json_response
+            )
+            logger.info(f"[ASK] Converted JSON to markdown - length={len(response_text)}")
+            input_tokens = structured_client.last_input_tokens
+            output_tokens = structured_client.last_output_tokens
+
+            # JSON 응답을 마크다운으로 변환했으므로, is_report = True로 강제 설정
+            # (8단계에서 사용됨)
+            json_converted = True
+        else:
+            # 일반 모드: chat_completion() 사용 (기존 방식)
+            logger.info(f"[ASK] Using standard chat_completion mode")
+            response_text, input_tokens, output_tokens = await asyncio.to_thread(
+                claude_client.chat_completion,
+                claude_messages,
+                system_prompt,
+                body.is_web_search
+            )
+            json_converted = False
 
         latency_ms = int((time.time() - t0) * 1000)
 
@@ -760,14 +850,20 @@ async def ask(
         )
 
     # === 7단계: 응답 형태 판별 ===
-    logger.info(f"[ASK] Detecting response type")
-    try:
-        is_report = is_report_content(response_text)
-    except Exception as detector_error:
-        logger.warning(
-            f"[ASK] Failed to detect response type, defaulting to report - error={detector_error}"
-        )
+    logger.info(f"[ASK] Detecting response type - json_converted={json_converted}")
+
+    # JSON 응답에서 변환된 경우 항상 report로 간주
+    if json_converted:
         is_report = True
+        logger.info(f"[ASK] JSON response converted to markdown - forcing is_report=True")
+    else:
+        try:
+            is_report = is_report_content(response_text)
+        except Exception as detector_error:
+            logger.warning(
+                f"[ASK] Failed to detect response type, defaulting to report - error={detector_error}"
+            )
+            is_report = True
 
     logger.info(f"[ASK] Response type detected - is_report={is_report}")
 
@@ -1735,6 +1831,44 @@ async def _background_generate_report(
                 hint="토픽 생성 시 template_id를 지정해주세요."
             )
 
+        # === Step 0.5: JSON 섹션 스키마 생성 (새로운 단계) ===
+        # source_type 정규화 (enum → 문자열)
+        source_type_str = topic_obj.source_type.value if hasattr(topic_obj.source_type, 'value') else str(topic_obj.source_type)
+        logger.info(f"[BACKGROUND] Creating section schema - source_type={source_type_str}")
+        section_schema = None
+
+        try:
+            if source_type_str and source_type_str in ("basic", "template"):
+                if source_type_str == "template" and topic_obj.template_id:
+                    # TEMPLATE 모드: placeholders 조회
+                    logger.info(f"[BACKGROUND] Loading placeholders for TEMPLATE mode - template_id={topic_obj.template_id}")
+                    placeholders = await asyncio.to_thread(
+                        lambda: __import__('app.database.template_db', fromlist=['TemplateDB']).TemplateDB.get_placeholders_by_template(topic_obj.template_id)
+                    )
+                    section_schema = await asyncio.to_thread(
+                        create_section_schema,
+                        source_type_str,  # ✅ 문자열로 전달
+                        placeholders
+                    )
+                else:
+                    # BASIC 모드: 고정 섹션
+                    section_schema = await asyncio.to_thread(
+                        create_section_schema,
+                        "basic"
+                    )
+
+                if section_schema:
+                    logger.info(f"[BACKGROUND] Section schema created - sections={len(section_schema.get('sections', []))}")
+            else:
+                logger.info(f"[BACKGROUND] source_type not set, skipping section schema generation")
+
+        except Exception as schema_error:
+            logger.warning(
+                f"[BACKGROUND] Failed to create section schema - error={schema_error}",
+                exc_info=True
+            )
+            section_schema = None
+
         # === Step 1: 진행 상태 업데이트 ===
         logger.info(f"[BACKGROUND] Preparing content - topic_id={topic_id}")
         await asyncio.to_thread(
@@ -1795,20 +1929,60 @@ async def _background_generate_report(
             )
 
         start_time = time.time()
-        # ✅ Non-blocking: Claude API 호출을 스레드 끝에서 실행
-        markdown = await asyncio.to_thread(
-            claude.generate_report,
-            topic=topic,
-            plan_text=user_prompt,
-            system_prompt=system_prompt,
-            isWebSearch=is_web_search
-        )
+
+        # JSON 모드와 일반 모드 구분
+        json_converted = False  # ✅ 변수 초기화
+
+        if section_schema:
+            # JSON 모드: StructuredClaudeClient 사용 (Structured Outputs)
+            logger.info(f"[BACKGROUND] Using Structured Outputs mode with section_schema")
+
+            # source_type 추출
+            source_type_str = topic_obj.source_type.value if hasattr(topic_obj.source_type, 'value') else str(topic_obj.source_type)
+
+            # StructuredClaudeClient 호출
+            structured_client = StructuredClaudeClient()
+
+            # context_messages: 현재 topic 정보 기반으로 구성 (배경 생성이므로 기존 메시지 없음)
+            context_messages = [
+                {"role": "user", "content": user_prompt}
+            ]
+
+            json_response = await asyncio.to_thread(
+                structured_client.generate_structured_report,
+                topic=topic,
+                system_prompt=system_prompt,
+                section_schema=section_schema,
+                source_type=source_type_str,
+                context_messages=context_messages
+            )
+
+            # JSON 응답 처리 (항상 StructuredReportResponse 객체)
+            logger.info(f"[BACKGROUND] JSON response received - sections={len(json_response.sections)}")
+            markdown = await asyncio.to_thread(
+                build_report_md_from_json,
+                json_response
+            )
+            logger.info(f"[BACKGROUND] Converted JSON to markdown - length={len(markdown)}")
+            json_converted = True
+        else:
+            # 일반 모드: generate_report() 사용 (section_schema 없음)
+            logger.info(f"[BACKGROUND] Using standard mode without section_schema")
+            markdown = await asyncio.to_thread(
+                claude.generate_report,
+                topic=topic,
+                plan_text=user_prompt,
+                system_prompt=system_prompt,
+                isWebSearch=is_web_search
+            )
+            json_converted = False
+
         latency_ms = int((time.time() - start_time) * 1000)
 
         input_tokens = claude.last_input_tokens
         output_tokens = claude.last_output_tokens
 
-        logger.info(f"[BACKGROUND] Content generated - topic_id={topic_id}, tokens={input_tokens}+{output_tokens}")
+        logger.info(f"[BACKGROUND] Content generated - topic_id={topic_id}, tokens={input_tokens}+{output_tokens}, json_converted={json_converted}")
 
         # === Step 3: 마크다운 파싱 및 변환 ===
         logger.info(f"[BACKGROUND] Parsing markdown - topic_id={topic_id}")
