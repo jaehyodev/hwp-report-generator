@@ -254,14 +254,24 @@ class StructuredClaudeClient:
         logger.info("[INVOKE_STRUCTURED] Claude API 호출 시작")
 
         try:
-            # Structured Outputs 파라미터
+            logger.debug(f"[INVOKE_STRUCTURED] API 파라미터 구성 중")
+            logger.debug(f"  - model: {self.model}")
+            logger.debug(f"  - max_tokens: {max_tokens}")
+            logger.debug(f"  - messages count: {len(messages)}")
+
+            # Structured Outputs 파라미터 - response_format 지원
+            # Note: Anthropic SDK 최신 버전에서 response_format 지원
             api_params = {
                 "model": self.model,
                 "max_tokens": max_tokens,
                 "system": system_prompt,
                 "messages": messages,
                 "temperature": temperature,
-                "response_format": {
+            }
+
+            # response_format을 시도 - SDK 버전에 따라 처리
+            try:
+                api_params["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": "StructuredReportResponse",
@@ -269,15 +279,23 @@ class StructuredClaudeClient:
                         "strict": True  # 엄격한 모드: schema 정확히 준수
                     }
                 }
-            }
-
-            logger.debug(f"[INVOKE_STRUCTURED] API 파라미터 구성 완료")
-            logger.debug(f"  - model: {self.model}")
-            logger.debug(f"  - max_tokens: {max_tokens}")
-            logger.debug(f"  - messages count: {len(messages)}")
+                logger.debug("[INVOKE_STRUCTURED] response_format 파라미터 추가 완료")
+            except Exception as e:
+                logger.warning(f"[INVOKE_STRUCTURED] response_format 설정 오류: {str(e)}")
+                logger.warning("[INVOKE_STRUCTURED] Fallback: response_format 없이 진행")
 
             # Claude API 호출
-            message = self.client.messages.create(**api_params)
+            logger.debug(f"[INVOKE_STRUCTURED] Claude API 호출 (response_format 포함 여부 확인 중)")
+            try:
+                message = self.client.messages.create(**api_params)
+            except TypeError as te:
+                # response_format이 지원되지 않는 경우, response_format 제거 후 재시도
+                if "response_format" in str(te):
+                    logger.warning(f"[INVOKE_STRUCTURED] response_format 미지원 감지 - 파라미터 제거 후 재시도")
+                    del api_params["response_format"]
+                    message = self.client.messages.create(**api_params)
+                else:
+                    raise
 
             # 응답 추출
             if not message.content:
