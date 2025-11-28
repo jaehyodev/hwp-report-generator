@@ -1,0 +1,15 @@
+<>
+<{{TITLE}}>
+<  >
+작성일: {{DATE}}
+
+<1 ><{{TITLE_BACKGROUND}}>
+< {{BACKGROUND}} >
+<2 >< {{TITLE_MAIN_CONTENT}}>
+{{MAIN_CONTENT}}
+
+<3 >< {{TITLE_CONCLUSION}}>
+{{CONCLUSION}}
+
+<4 >< {{TITLE_SUMARY}}>
+{{SUMARY}}

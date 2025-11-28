@@ -7,7 +7,7 @@ pyqt5-sip==12.17.1; sys_platform == "win32"
 # 공통 패키지
 aiofiles==23.2.1
 annotated-types==0.7.0
-anthropic>=1.0.0
+anthropic==0.75.0
 anyio==3.7.1
 bcrypt==4.1.2
 black==24.10.0

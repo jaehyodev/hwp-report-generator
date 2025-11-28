@@ -14,7 +14,7 @@
       "mcp__playwright",
       "mcp__serena",
       "mcp__sequential-thinking",
-      "mcp__codex-cli_codex"
+      "mcp__codex-cli__codex"
     ],
     "deny": [
       "Read(**/.env*)",

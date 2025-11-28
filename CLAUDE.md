@@ -795,10 +795,14 @@ POST /api/templates
 - `/api/topics/{id}/ask`, `/api/topics/generate` 엔드포인트에 적용
 
 ✅ **StructuredClaudeClient 구현**
-- `__init__()`: Anthropic 클라이언트 초기화
+- `__init__()`: Anthropic 클라이언트 초기화 + Beta Header 설정
+  - `anthropic-beta: structured-outputs-2025-11-13` 헤더 자동 추가
 - `generate_structured_report()`: Structured Outputs로 JSON 보고서 생성
 - `_build_json_schema()`: 동적 스키마 생성 (BASIC/TEMPLATE 분기)
-- `_invoke_with_structured_output()`: Claude API 호출 with response_format
+  - `additionalProperties: false` 포함 (공식 요구사항)
+- `_invoke_with_structured_output()`: Claude API 호출 with output_format ⭐
+  - 공식 API 파라미터: `output_format` (NOT response_format)
+  - 불필요한 필드 제거: name, strict 제외
 - `_process_response()`: StructuredReportResponse 객체로 변환
 - 반환 타입: 항상 `StructuredReportResponse` (Fallback 없음)
 
@@ -904,10 +908,13 @@ markdown = await asyncio.to_thread(
 
 ### 기술 스택
 
-- **Claude API**: Structured Outputs (response_format with json_schema)
-- **Anthropic SDK**: >= 0.25.0 (Structured Outputs 지원)
+- **Claude API**: Structured Outputs (output_format with json_schema) ⭐
+  - 공식 문서: https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+  - Beta Header: `anthropic-beta: structured-outputs-2025-11-13`
+  - 주의: response_format이 아닌 output_format 사용
+- **Anthropic SDK**: >= 0.71.0 (Structured Outputs 지원)
 - **Pydantic**: BaseModel with dynamic field types
-- **JSON Schema**: Draft 2020-12 (Claude 호환)
+- **JSON Schema**: Draft 2020-12 + additionalProperties: false
 
 ### 사용 사례
 
@@ -925,6 +932,21 @@ markdown = await asyncio.to_thread(
 - ✅ 기존 데이터 모델: SectionMetadata.type을 str로 변경했으나, markdown_builder.py에서 `.value` 체크로 Enum 호환성 유지
 - ✅ 기존 API 응답 형식: 변경 없음 (내부적으로만 JSON 처리)
 - ✅ 기존 테스트: 모두 통과 (5/5 regression tests)
+
+### 🔧 API 파라미터 핫픽스 (2025-11-28)
+
+**문제:** 초기 구현에서 `response_format` 파라미터를 사용했으나, 공식 Claude API 문서에서는 `output_format`을 사용
+
+**수정 사항:**
+1. **파라미터 이름 변경:** `response_format` → `output_format` ⭐
+   - 공식 문서: https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+2. **Beta Header 추가:** `anthropic-beta: structured-outputs-2025-11-13`
+3. **JSON Schema 수정:** `additionalProperties: false` 추가 (root + items level)
+4. **불필요한 필드 제거:** name, strict 필드 제외 (공식 spec에 없음)
+
+**검증:**
+- ✅ 모든 11개 테스트 통과 (test_structured_outputs_integration.py)
+- ✅ 공식 API 문서 기준 준수 확인
 
 ### Unit Spec
 - 파일: `backend/doc/specs/20251128_json_structured_section_metadata.md`

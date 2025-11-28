@@ -42,7 +42,14 @@ class StructuredClaudeClient:
         # 기본 모델 (Sonnet 4.5)
         self.model = os.getenv("CLAUDE_MODEL", ClaudeConfig.MODEL)
         self.max_tokens = ClaudeConfig.MAX_TOKENS
-        self.client = Anthropic(api_key=self.api_key)
+
+        # Beta header 설정 (Structured Outputs 2025-11-13)
+        self.client = Anthropic(
+            api_key=self.api_key,
+            default_headers={
+                "anthropic-beta": "structured-outputs-2025-11-13"
+            }
+        )
 
         # 토큰 사용량 추적
         self.last_input_tokens = 0
@@ -50,6 +57,7 @@ class StructuredClaudeClient:
         self.last_total_tokens = 0
 
         logger.info(f"[STRUCTURED_CLIENT] 초기화 완료 - model={self.model}")
+        logger.info(f"[STRUCTURED_CLIENT] Beta header 설정: structured-outputs-2025-11-13")
 
     def generate_structured_report(
         self,
@@ -124,6 +132,9 @@ class StructuredClaudeClient:
 
         Returns:
             JSON Schema dict (type enum은 source_type에 따라 동적 또는 자유형)
+            ⚠️ Claude Structured Outputs 정식 요구사항:
+               - additionalProperties: false (필수)
+               - 파라미터: output_format (response_format 아님)
 
         Logic:
             1. BASIC 모드:
@@ -138,7 +149,7 @@ class StructuredClaudeClient:
         # 정규화된 source_type
         normalized_source = str(source_type).strip().lower()
 
-        # 기본 JSON Schema 구조
+        # 기본 JSON Schema 구조 (Structured Outputs 정식 요구사항 포함)
         base_schema = {
             "type": "object",
             "properties": {
@@ -195,8 +206,12 @@ class StructuredClaudeClient:
                     "description": "메타데이터 (생성일, 모델 등)"
                 }
             },
-            "required": ["sections"]
+            "required": ["sections"],
+            "additionalProperties": False  # ⚠️ Structured Outputs 정식 요구사항
         }
+
+        # ⚠️ Section items level에도 additionalProperties 추가
+        base_schema["properties"]["sections"]["items"]["additionalProperties"] = False
 
         # BASIC 모드: type enum 고정
         if normalized_source == "basic":
@@ -269,30 +284,28 @@ class StructuredClaudeClient:
                 "temperature": temperature,
             }
 
-            # response_format을 시도 - SDK 버전에 따라 처리
+            # ⚠️ Claude Structured Outputs 정식 파라미터: output_format (response_format 아님)
+            # https://platform.claude.com/docs/en/build-with-claude/structured-outputs
             try:
-                api_params["response_format"] = {
+                api_params["output_format"] = {
                     "type": "json_schema",
-                    "json_schema": {
-                        "name": "StructuredReportResponse",
-                        "schema": json_schema,
-                        "strict": True  # 엄격한 모드: schema 정확히 준수
-                    }
+                    "schema": json_schema
+                    # ⚠️ 주의: name, strict 필드는 사용하지 않음 (공식 문서 기준)
                 }
-                logger.debug("[INVOKE_STRUCTURED] response_format 파라미터 추가 완료")
+                logger.debug("[INVOKE_STRUCTURED] output_format 파라미터 추가 완료 (정식 Structured Outputs)")
             except Exception as e:
-                logger.warning(f"[INVOKE_STRUCTURED] response_format 설정 오류: {str(e)}")
-                logger.warning("[INVOKE_STRUCTURED] Fallback: response_format 없이 진행")
+                logger.warning(f"[INVOKE_STRUCTURED] output_format 설정 오류: {str(e)}")
+                logger.warning("[INVOKE_STRUCTURED] Fallback: output_format 없이 진행")
 
             # Claude API 호출
-            logger.debug(f"[INVOKE_STRUCTURED] Claude API 호출 (response_format 포함 여부 확인 중)")
+            logger.debug(f"[INVOKE_STRUCTURED] Claude API 호출 (output_format 포함)")
             try:
                 message = self.client.messages.create(**api_params)
             except TypeError as te:
-                # response_format이 지원되지 않는 경우, response_format 제거 후 재시도
-                if "response_format" in str(te):
-                    logger.warning(f"[INVOKE_STRUCTURED] response_format 미지원 감지 - 파라미터 제거 후 재시도")
-                    del api_params["response_format"]
+                # output_format이 지원되지 않는 경우 (SDK 버전 문제), 제거 후 재시도
+                if "output_format" in str(te):
+                    logger.warning(f"[INVOKE_STRUCTURED] output_format 미지원 감지 - 파라미터 제거 후 재시도")
+                    del api_params["output_format"]
                     message = self.client.messages.create(**api_params)
                 else:
                     raise

@@ -874,6 +874,237 @@ def _format_examples(examples: Optional[ListType[str]]) -> str:
     return "\n".join([f"- {ex}" for ex in examples])
 
 
+def create_section_schema(
+    source_type: str,
+    placeholders: Optional[ListType[DictType[str, Any]]] = None,
+) -> dict:
+    """소스 타입별 섹션 스키마 JSON 생성.
+
+    Args:
+        source_type: "BASIC" 또는 "TEMPLATE"
+        placeholders: Template 기반일 때만 사용 (sort 순서로 정렬된 리스트)
+
+    Returns:
+        섹션 메타정보 JSON 스키마 (LLM에 전달용)
+
+    Example (BASIC):
+        {
+          "format": "json",
+          "sections": [
+            {"id": "TITLE", "type": "TITLE", "required": true, ...},
+            {"id": "BACKGROUND", "type": "BACKGROUND", "required": true, ...},
+            ...
+          ]
+        }
+
+    Example (TEMPLATE):
+        {
+          "format": "json",
+          "sections": [
+            {"id": "TITLE", "type": "TITLE", "placeholder_key": "{{TITLE}}", ...},
+            {"id": "MARKET_ANALYSIS", "type": "SECTION", "placeholder_key": "{{MARKET_ANALYSIS}}", ...}
+          ]
+        }
+    """
+
+    def _resolve_source(raw_source: Any) -> str:
+        if hasattr(raw_source, "value"):
+            raw_source = raw_source.value
+        return str(raw_source or "").strip().upper()
+
+    def _get_attr(item: Any, key: str, default: Any = None) -> Any:
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
+
+    def _strip_placeholder_key(value: Optional[str]) -> str:
+        if not value:
+            return ""
+        return value.replace("{{", "").replace("}}", "").strip()
+
+    def _build_basic_sections() -> list[DictType[str, Any]]:
+        logger.info("[SCHEMA] Creating BASIC section schema (v1.2)")
+        return [
+            {
+                "id": "TITLE",
+                "type": "TITLE",
+                "required": True,
+                "description": "보고서 제목",
+                "max_length": 15,
+                "order": 1,
+                "source_type": "basic",
+            },
+            {
+                "id": "DATE",
+                "type": "DATE",
+                "required": True,
+                "description": "보고서 작성일 (yyyy.mm.dd)",
+                "order": 2,
+                "source_type": "system",
+            },
+            {
+                "id": "BACKGROUND",
+                "type": "BACKGROUND",
+                "required": True,
+                "description": "배경 및 목적",
+                "max_length": 200,
+                "order": 3,
+                "source_type": "basic",
+            },
+            {
+                "id": "MAIN_CONTENT",
+                "type": "MAIN_CONTENT",
+                "required": True,
+                "description": "주요 내용",
+                "max_length": 1000,
+                "order": 4,
+                "source_type": "basic",
+            },
+            {
+                "id": "SUMMARY",
+                "type": "SUMMARY",
+                "required": True,
+                "description": "요약",
+                "max_length": 500,
+                "order": 5,
+                "source_type": "basic",
+            },
+            {
+                "id": "CONCLUSION",
+                "type": "CONCLUSION",
+                "required": True,
+                "description": "결론 및 제언",
+                "max_length": 500,
+                "order": 6,
+                "source_type": "basic",
+            },
+        ]
+
+    def _sort_value(item: Any) -> int:
+        sort_value = _get_attr(item, "sort")
+        try:
+            return int(sort_value)
+        except (TypeError, ValueError):
+            return 10**6
+
+    def _next_order_factory() -> Any:
+        current_order = 1
+
+        def _next_order() -> int:
+            nonlocal current_order
+            if current_order == 2:
+                current_order += 1
+            order_value = current_order
+            current_order += 1
+            return order_value
+
+        return _next_order
+
+    normalized_source = _resolve_source(source_type)
+
+    if normalized_source == "BASIC":
+        return {
+            "format": "json",
+            "sections": _build_basic_sections(),
+        }
+
+    if normalized_source != "TEMPLATE":
+        raise ValueError(
+            f"Unknown source_type: {source_type}. Must be 'BASIC' or 'TEMPLATE'"
+        )
+
+    if not placeholders:
+        raise ValueError("placeholders required for TEMPLATE source_type")
+
+    logger.info(
+        f"[SCHEMA] Creating TEMPLATE section schema (v1.2) - placeholders={len(placeholders)}"
+    )
+
+    date_defined = False
+    sections: list[DictType[str, Any]] = []
+    next_order = _next_order_factory()
+
+    for placeholder in sorted(placeholders, key=_sort_value):
+        placeholder_key = _get_attr(placeholder, "placeholder_key")
+        placeholder_clean = _strip_placeholder_key(
+            str(placeholder_key) if placeholder_key else ""
+        )
+        if not placeholder_clean:
+            placeholder_clean = f"PLACEHOLDER_{len(sections) + 1}"
+        normalized_key = placeholder_clean.upper()
+
+        if normalized_key == "DATE":
+            sections.append(
+                {
+                    "id": "DATE",
+                    "type": "DATE",
+                    "placeholder_key": placeholder_key,
+                    "required": True,
+                    "description": _get_attr(
+                        placeholder, "description", "보고서 작성일 (yyyy.mm.dd)"
+                    ),
+                    "order": 2,
+                    "source_type": "template",
+                }
+            )
+            date_defined = True
+            continue
+
+        if "TITLE" in normalized_key:
+            sections.append(
+                {
+                    "id": "TITLE",
+                    "type": "TITLE",
+                    "placeholder_key": placeholder_key,
+                    "required": True,
+                    "description": _get_attr(placeholder, "description", "보고서 제목"),
+                    "max_length": _get_attr(placeholder, "max_length", 100),
+                    "order": next_order(),
+                    "source_type": "template",
+                }
+            )
+            continue
+
+        title = _get_attr(placeholder, "title", normalized_key)
+        sections.append(
+            {
+                "id": normalized_key,
+                "type": normalized_key or "SECTION",
+                "placeholder_key": placeholder_key,
+                "required": True,
+                "description": _get_attr(
+                    placeholder, "description", f"{title} 섹션"
+                ),
+                "max_length": _get_attr(placeholder, "max_length", 1500),
+                "min_length": _get_attr(placeholder, "min_length", 500),
+                "example": _get_attr(
+                    placeholder, "example", f"{title}에 대한 예시 내용"
+                ),
+                "order": next_order(),
+                "source_type": "template",
+            }
+        )
+
+    if not date_defined:
+        sections.append(
+            {
+                "id": "DATE",
+                "type": "DATE",
+                "required": True,
+                "description": "보고서 작성일 (yyyy.mm.dd)",
+                "order": 2,
+                "source_type": "system",
+            }
+        )
+
+    sections.sort(key=lambda item: item.get("order", 0))
+
+    return {
+        "format": "json",
+        "sections": sections,
+    }
+
+
 def create_topic_context_message(topic_input_prompt: str) -> dict:
     """대화 주제를 포함하는 context message를 생성합니다.
 

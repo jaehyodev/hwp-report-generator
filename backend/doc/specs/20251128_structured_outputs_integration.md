@@ -27,11 +27,17 @@ Claude API의 Structured Outputs 기능을 사용하여 보고서 생성 API 응
 
 | 구분 | 파일 | 변경 내용 |
 |------|------|---------|
-| **New** | `backend/app/utils/structured_client.py` | Structured Outputs 전용 Claude 클라이언트 (236줄 예상) |
+| **New** | `backend/app/utils/structured_client.py` | Structured Outputs 전용 Claude 클라이언트 (320줄) |
 | **Change** | `backend/app/models/report_section.py` | `SectionMetadata.type` 필드: `SectionType` → `str` (동적 type 지원) |
 | **Change** | `backend/app/routers/topics.py` | `ask()`, `_background_generate_report()` 수정 (Structured Client 호출) |
 | **Reference** | `backend/app/utils/claude_client.py` | 기존 로직 참고 (JSON 파싱) |
 | **Reference** | `backend/app/utils/markdown_builder.py` | 기존 함수 사용 (JSON → Markdown) |
+
+### 📌 공식 API 문서 기준
+- **출처**: https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+- **Beta Header**: `anthropic-beta: structured-outputs-2025-11-13` (필수)
+- **API 파라미터**: `output_format` (NOT response_format)
+- **JSON Schema**: `additionalProperties: false` (필수)
 
 ---
 
@@ -57,16 +63,16 @@ Claude API의 Structured Outputs 기능을 사용하여 보고서 생성 API 응
           "order": {"type": "integer"},
           "source_type": {"type": "string", "enum": ["basic", "system"]},
           "placeholder_key": {"type": ["string", "null"]},
-          "max_length": {"type": ["integer", "null"]},
-          "min_length": {"type": ["integer", "null"]},
           "description": {"type": ["string", "null"]},
           "example": {"type": ["string", "null"]}
         },
-        "required": ["id", "type", "content", "order", "source_type"]
+        "required": ["id", "type", "content", "order", "source_type"],
+        "additionalProperties": false
       }
     }
   },
-  "required": ["sections"]
+  "required": ["sections"],
+  "additionalProperties": false
 }
 ```
 
@@ -87,16 +93,16 @@ Placeholders에서 추출한 id들이 `type` 필드로 자유롭게 들어옴 (e
           "order": {"type": "integer"},
           "source_type": {"type": "string", "enum": ["template", "system"]},
           "placeholder_key": {"type": ["string", "null"]},
-          "max_length": {"type": ["integer", "null"]},
-          "min_length": {"type": ["integer", "null"]},
           "description": {"type": ["string", "null"]},
           "example": {"type": ["string", "null"]}
         },
-        "required": ["id", "type", "content", "order", "source_type"]
+        "required": ["id", "type", "content", "order", "source_type"],
+        "additionalProperties": false
       }
     }
   },
-  "required": ["sections"]
+  "required": ["sections"],
+  "additionalProperties": false
 }
 ```
 
@@ -476,7 +482,13 @@ assert elapsed < 10, f"Response took {elapsed}s (expected < 10s)"
 
 ## 6. 기술 스택
 
-- **Anthropic SDK**: anthropic >= 0.25.0 (Structured Outputs 지원)
+- **Claude API Structured Outputs** (공식 문서)
+  - 참조: https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+  - Beta Header: `anthropic-beta: structured-outputs-2025-11-13`
+  - API 파라미터: `output_format` (type: "json_schema", schema: {...})
+  - ⚠️ 주의: `response_format`, `name`, `strict` 필드는 사용하지 않음
+
+- **Anthropic SDK**: >= 0.71.0 (output_format 파라미터 지원)
 - **Pydantic**: >= 2.0 (JSON Schema 생성)
 - **Python**: >= 3.12
 
@@ -489,32 +501,49 @@ assert elapsed < 10, f"Response took {elapsed}s (expected < 10s)"
 ```python
 class StructuredClaudeClient:
     def __init__(self):
-        """인스턴스 초기화"""
+        """인스턴스 초기화
+
+        Beta Header 설정:
+        - anthropic-beta: structured-outputs-2025-11-13 (필수)
+        """
 
     def generate_structured_report(
         self,
         topic: str,
         system_prompt: str,
         section_schema: dict,
+        source_type: str,  # "basic" 또는 "template"
         context_messages: Optional[List[dict]] = None,
         temperature: float = 0.7,
         max_tokens: int = 4000
     ) -> StructuredReportResponse:
         """구조화된 보고서 생성 (Structured Outputs)"""
 
-    def _build_json_schema(self) -> dict:
-        """Pydantic 모델에서 JSON Schema 생성"""
+    def _build_json_schema(self, section_schema: dict, source_type: str) -> dict:
+        """JSON Schema 생성 (additionalProperties: false 포함)
+
+        - BASIC 모드: type enum = 고정값
+        - TEMPLATE 모드: type = 문자열 자유형
+        """
 
     def _invoke_with_structured_output(
         self,
         system_prompt: str,
-        user_message: str,
+        messages: List[dict],
         json_schema: dict,
         temperature: float = 0.7,
-        max_tokens: int = 4000,
-        context_messages: Optional[List[dict]] = None
+        max_tokens: int = 4000
     ) -> dict:
-        """Structured Outputs로 Claude API 호출"""
+        """Structured Outputs로 Claude API 호출
+
+        ⭐ 공식 API 파라미터:
+        api_params["output_format"] = {
+            "type": "json_schema",
+            "schema": json_schema
+        }
+
+        NOT response_format (구식)
+        """
 
     def _build_user_message(
         self,
@@ -545,10 +574,14 @@ class StructuredClaudeClient:
 ### 단계 1: StructuredClaudeClient 구현 (3.5h)
 - [ ] Pydantic 모델에서 JSON Schema 추출 로직 (1.5h)
 - [ ] StructuredClaudeClient 클래스 구현 (2h)
-  - `__init__()`: Anthropic 클라이언트 초기화
+  - `__init__()`: Anthropic 클라이언트 초기화 (Beta Header 필수)
+    - `default_headers={"anthropic-beta": "structured-outputs-2025-11-13"}`
   - `generate_structured_report()`: 메인 함수
   - `_build_json_schema()`: 동적 JSON Schema 생성 (BASIC/TEMPLATE 분기)
-  - `_invoke_with_structured_output()`: Claude API 호출
+    - `additionalProperties: false` 추가 (root + items level)
+  - `_invoke_with_structured_output()`: Claude API 호출 with output_format
+    - 공식 파라미터: `output_format` (NOT response_format)
+    - 필드 구조: `{"type": "json_schema", "schema": {...}}`
 
 ### 단계 2: Router 통합 (3h)
 - [ ] topics.py `ask()` 함수 수정 (1.5h)
@@ -571,18 +604,29 @@ class StructuredClaudeClient:
 
 ## 9. 참고자료
 
-- [Claude API Structured Outputs 문서](https://platform.claude.com/docs/en/api/overview)
+### ⭐ 공식 API 문서 (필독)
+- **Claude Structured Outputs 공식 가이드**
+  - https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+  - Beta Header 설정: `anthropic-beta: structured-outputs-2025-11-13`
+  - API 파라미터: `output_format` with `json_schema` type
+  - JSON Schema 요구사항: `additionalProperties: false`
+
+### 라이브러리 문서
 - [Pydantic JSON Schema](https://docs.pydantic.dev/latest/concepts/json_schema/)
 - [Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python)
+- [JSON Schema Specification](https://json-schema.org/)
 
 ---
 
 ## 10. 가정사항
 
-1. Anthropic SDK >= 0.25.0에서 Structured Outputs 지원 (최신 버전에서 확인 필수)
-2. Claude Sonnet 4.5 모델이 Structured Outputs를 지원함 (API 문서 기준)
-3. 기존 `build_report_md_from_json()` 함수가 정상 작동함 (이미 검증됨)
-4. 모든 JSON 응답이 유효한 UTF-8 인코딩
+1. **Anthropic SDK >= 0.71.0** (output_format 파라미터 지원 필수)
+   - 현재 환경: anthropic==0.75.0 ✅
+   - 공식 API 문서: https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+2. Claude Sonnet 4.5 모델이 Structured Outputs를 지원함 (API 문서 기준) ✅
+3. Beta Header `anthropic-beta: structured-outputs-2025-11-13` 지원 (필수)
+4. 기존 `build_report_md_from_json()` 함수가 정상 작동함 (이미 검증됨) ✅
+5. 모든 JSON 응답이 유효한 UTF-8 인코딩
 
 ---
 
