@@ -2,7 +2,7 @@ import api from './api'
 import {API_ENDPOINTS} from '../constants/'
 import type {UserData} from '../types/user'
 import type {ApiResponse} from '../types/api'
-import type { TokenUsageModel } from '@/models/TokenUsageModel'
+import type { TokenUsageModel } from '@/types/domain/TokenUsageModel'
 
 interface MessageResponse {
     message: string

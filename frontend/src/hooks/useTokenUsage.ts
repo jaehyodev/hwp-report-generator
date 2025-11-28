@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { adminApi } from '@/services/adminApi'
-import type { TokenUsageModel } from '@/models/TokenUsageModel'
-import type { TokenUsageUI } from '@/models/ui/TokenUsageUI'
+import type { TokenUsageModel } from '@/types/domain/TokenUsageModel'
+import type { TokenUsageUI } from '@/types/ui/TokenUsageUI'
 import { mapAllTokenUsageResponseToModel, mapUserTokenUsageResponseToModel, mapTokenUsageToUI } from '@/mapper/tokenUsageMapper'
 import type { UserData } from '../types/user'
 

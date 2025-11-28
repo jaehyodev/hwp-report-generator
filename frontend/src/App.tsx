@@ -1,3 +1,18 @@
+import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom'
+import '@ant-design/v5-patch-for-react-19'
+import {App as AntdApp} from 'antd'
+import {ThemeProvider} from './contexts/ThemeContext'
+import {AuthProvider} from './context/AuthContext'
+import PrivateRoute from './components/auth/PrivateRoute'
+import PublicRoute from './components/auth/PublicRoute'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import MainPage from './pages/MainPage'
+import TopicListPage from './pages/TopicListPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
+import AdminPage from './pages/AdminPage'
+import TemplateManagementPage from './pages/TemplateManagementPage'
+
 /**
  * App.tsx
  *
@@ -15,23 +30,7 @@
  *         → Router: URL 라우팅
  */
 
-import React from 'react'
-import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom'
-import '@ant-design/v5-patch-for-react-19'
-import {App as AntdApp} from 'antd'
-import {ThemeProvider} from './contexts/ThemeContext'
-import {AuthProvider} from './context/AuthContext'
-import PrivateRoute from './components/auth/PrivateRoute'
-import PublicRoute from './components/auth/PublicRoute'
-import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
-import MainPage from './pages/MainPage'
-import TopicListPage from './pages/TopicListPage'
-import ChangePasswordPage from './pages/ChangePasswordPage'
-import AdminPage from './pages/AdminPage'
-import TemplateManagementPage from './pages/TemplateManagementPage'
-
-const App: React.FC = () => {
+const App = () => {
     return (
         // 테마 Provider: 다크/라이트 테마 관리 (ConfigProvider 포함)
         <ThemeProvider>

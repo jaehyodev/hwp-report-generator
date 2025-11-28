@@ -1,4 +1,4 @@
-import type {MessageUI} from '../../models/ui/MessageUI'
+import type {MessageUI} from '../../types/ui/MessageUI'
 import {AssistantOutlineCard} from './AssistantOutlineCard'
 import {OutlineActionButtons} from './OutlineActionButtons'
 

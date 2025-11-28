@@ -1,6 +1,6 @@
-import type {MessageResponse} from '@/services/messageApi'
-import type {MessageModel} from '@/models/MessageModel'
-import type {MessageUI} from '@/models/ui/MessageUI'
+import type {MessageResponse} from '@/types/api/MessageApi'
+import type {MessageModel} from '@/types/domain/MessageModel'
+import type {MessageUI} from '@/types/ui/MessageUI'
 
 /**
  * messageMapper.ts

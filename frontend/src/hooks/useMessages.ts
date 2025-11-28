@@ -1,6 +1,6 @@
 import {useMessageStore} from '../stores/useMessageStore'
 import {mapMessageModelsToUI} from '../mapper/messageMapper'
-import type {MessageUI} from '../models/ui/MessageUI'
+import type {MessageUI} from '../types/ui/MessageUI'
 
 /**
  * useMessages 커스텀 훅

@@ -2,14 +2,14 @@ import React, {useState} from 'react'
 import {FileTextOutlined, DownloadOutlined, DeleteOutlined} from '@ant-design/icons'
 import {useAuth} from '../../hooks/useAuth'
 import DeleteChatMessageModal from './DeleteChatMessageModal'
-import type {MessageUI} from '../../models/ui/MessageUI'
+import type {MessageUI} from '../../types/ui/MessageUI'
 import styles from './ChatMessage.module.css'
 
 interface ChatMessageProps {
     message: MessageUI
     onReportClick: (reportData: {filename: string; content: string; messageId: number; reportId: number}) => void
     onDownload: (reportData: {filename: string; content: string; messageId: number; reportId: number}) => void
-    onDelete?: (messageId: number) => void
+    onDelete?: (messageId: number, clientId: number) => void
     isGenerating?: boolean
     isDeleting?: boolean
 }
@@ -33,7 +33,7 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
 
     const handleConfirmDelete = () => {
         if (!message.id) return
-        onDelete?.(message.id)
+        onDelete?.(message.id, message.clientId)
         setShowDeleteModal(false)
     }
 
@@ -44,6 +44,7 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
     return (
         <>
             <div className={`${styles.chatMessage} ${styles[message.role]}`}>
+                {/* 사용자 또는 어시스턴트 아이콘 */}
                 <div className={styles.messageAvatar}>
                     {message.role === 'user' ? (
                         <div className={styles.userAvatar}>U</div>
@@ -60,8 +61,10 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
                         </div>
                     )}
                 </div>
-
+                
+                {/* 사용자 또는 어시스턴트 아이콘을 제외한 메시지 영역 */}
                 <div className={styles.messageContentWrapper}>
+                    {/* 메시지 송신자의 이름과 송신 시각 */}
                     <div className={styles.messageHeader}>
                         <span className={styles.messageSender}>
                             {message.role === 'user' ? <span>{user?.username || '사용자'} </span> : 'Assistant'}
@@ -70,7 +73,7 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
                     </div>
 
                     <div className={styles.messageContent} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
-                        {/* 삭제 버튼 - 호버 시에만 표시 */}
+                        {/* 삭제 버튼 - 호버 시에만 표시, 대화 내용의 3번째 메시지부터 삭제 표시 */}
                         {!isGenerating && isHovered && onDelete && (
                             <button className={styles.deleteBtn} onClick={handleDeleteClick} disabled={isDeleting} title="메시지 삭제">
                                 <DeleteOutlined />

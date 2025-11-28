@@ -253,8 +253,8 @@ const MainPage = () => {
     /**
      * 메시지 삭제 핸들러 (useChatActions 훅 래핑)
      */
-    const handleDeleteMessage = async (messageId: number) => {
-        await deleteMessage(messageId, setSelectedReport, selectedReport, messages)
+    const handleDeleteMessage = async (messageId: number, messageClientId: number) => {
+        await deleteMessage(messageId, messageClientId, setSelectedReport, selectedReport)
     }
 
     /**
@@ -358,7 +358,7 @@ const MainPage = () => {
                                                             message={message}
                                                             onReportClick={handleReportClick}
                                                             onDownload={handleDownload}
-                                                            onDelete={handleDeleteMessage}
+                                                            onDelete={message.clientId > 1 ? handleDeleteMessage : undefined}
                                                             isGenerating={isGeneratingMessage}
                                                             isDeleting={isDeletingMessage}
                                                         />

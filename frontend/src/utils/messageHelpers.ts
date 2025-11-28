@@ -1,6 +1,6 @@
 import {artifactApi} from '../services/artifactApi'
 import type {Artifact} from '../types/artifact'
-import type {MessageModel} from '../models/MessageModel'
+import type {MessageModel} from '@/types/domain/MessageModel'
 
 /**
  * messageHelpers.ts

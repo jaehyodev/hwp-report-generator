@@ -1,37 +1,13 @@
 import api from './api'
 import {API_ENDPOINTS} from '../constants/'
 import type {ApiResponse} from '../types/api'
-import type {MessageRole} from '../models/MessageModel'
+import type { CreateMessageRequest, MessageListResponse, MessageResponse } from '@/types/api/MessageApi'
 
 /**
  * messageApi.ts
  *
  * 메시지 관련 API 함수 모음
  */
-
-// 서버 응답 DTO
-export interface MessageResponse {
-    id: number
-    topic_id: number
-    role: MessageRole
-    content: string
-    seq_no: number
-    created_at: string
-}
-
-// 메시지 목록 응답
-export interface MessageListResponse {
-    messages: MessageResponse[]
-    total: number
-    topic_id: number
-}
-
-// 새 메시지 생성 요청 (토픽 내)
-export interface CreateMessageRequest {
-    role: MessageRole
-    content: string
-}
-
 export const messageApi = {
     /**
      * 특정 주제의 메시지 목록 조회
@@ -49,12 +25,12 @@ export const messageApi = {
         const response = await api.get<ApiResponse<MessageListResponse>>(`${API_ENDPOINTS.LIST_MESSAGES(topicId)}?${params.toString()}`)
 
         if (!response.data.success || !response.data.data) {
-            console.log('listMessages > failed >', response.data)
+            console.log('listMessages >> failed >> ', response.data)
 
             throw new Error(response.data.error?.message || '메시지 목록 조회에 실패했습니다.')
         }
 
-        console.log('listMessages > success >', response.data)
+        console.log('listMessages >> success >> ', response.data)
 
         return response.data.data
     },
@@ -91,11 +67,11 @@ export const messageApi = {
         const response = await api.delete<ApiResponse<{message: string}>>(API_ENDPOINTS.DELETE_MESSAGE(topicId, messageId))
 
         if (!response.data.success) {
-            console.log('deleteMessage > failed >', response.data)
+            console.log('deleteMessage >> failed >> ', response.data)
 
             throw new Error(response.data.error?.message || '메시지 삭제에 실패했습니다.')
         }
 
-        console.log('deleteMessage > success >', response.data)
+        console.log('deleteMessage >> success >> ', response.data)
     }
 }

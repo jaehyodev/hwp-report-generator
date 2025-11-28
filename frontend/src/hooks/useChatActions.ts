@@ -2,12 +2,8 @@ import {message as antdMessage} from 'antd'
 import {topicApi} from '../services/topicApi'
 import {messageApi} from '../services/messageApi'
 import {useTopicStore} from '../stores/useTopicStore'
-import {useArtifactStore} from '../stores/useArtifactStore'
 import {useMessageStore} from '../stores/useMessageStore'
-import type {MessageModel} from '../models/MessageModel'
-import type {MessageUI} from '../models/ui/MessageUI'
-import type {Artifact} from '../types/artifact'
-import {Navigate} from 'react-router-dom'
+import type {MessageModel} from '@/types/domain/MessageModel'
 
 /**
  * useChatActions.ts
@@ -23,34 +19,28 @@ interface UseChatActionsOptions {
     refreshMessages: (topicId: number) => Promise<void>
 }
 
-export const useChatActions = ({selectedTopicId, setSelectedTopicId, setMessages, refreshMessages}: UseChatActionsOptions) => {
-    const {addTopic} = useTopicStore()
-    const {loadArtifacts, autoSelectLatest, getSelectedArtifactId, refreshArtifacts} = useArtifactStore()
-
+export const useChatActions = ({selectedTopicId, setSelectedTopicId, refreshMessages}: UseChatActionsOptions) => {
     /**
      * 메시지 전송 핸들러
      * - MessageModel 기반으로 동작
-     * TODO: 첫 메시지 토픽생성은 Plan을 사용하면서 LEGACY, 그 이후 메시지 전송 로직 수정 필요
      */
     const handleSendMessage = async (message: string, files: File[], webSearchEnabled: boolean) => {
-        // selectedTopicId null 체크를 먼저 수행
+        // 주제가 없는 지 확인
         if (selectedTopicId === null) {
             antdMessage.warning('대화를 시작하려면 먼저 주제를 선택하세요.')
             return
         }
 
         const messageStore = useMessageStore.getState()
-        const topicStore = useTopicStore.getState()
-        topicStore.addGeneratingTopicId(selectedTopicId)
+        const topicStore = useTopicStore.getState() 
+        topicStore.addGeneratingTopicId(selectedTopicId) // 메시지 생성 중인 쓰레드 목록에 쓰레드 추가
 
         try {
-            // 보고서 생성 이후 메시지 체이닝 (ask API)
-            // 이제 selectedTopicId는 number 타입이 보장됨
+            // 보고서 생성 이후 메시지 체이닝 (ask API) (selectedTopicId는 number 타입이 보장됨)
 
             // 임시 사용자 메시지 생성 - UI에 즉시 표시용
-            // ID가 없는 메시지는 mergeNewMessages에서 서버 메시지로 교체됨
             const userMessage: MessageModel = {
-                id: undefined, // 임시 메시지 표시 - 서버 응답 후 교체됨
+                id: undefined, // 임시 메시지 표시 - 서버 응답 후 메시지를 제거 후, 새로 추가
                 topicId: selectedTopicId,
                 role: 'user',
                 content: message.trim(),
@@ -61,37 +51,44 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, setMessages
 
             // UI에 즉시 표시 (사용자 경험 향상)
             messageStore.addMessages(selectedTopicId, [userMessage])
-            let selectedArtifactId = getSelectedArtifactId(selectedTopicId)
 
-            // 참조 보고서 선택: 선택된 아티팩트가 없으면 자동으로 최신 선택 (MD 파일만)
-            if (!selectedArtifactId) {
-                const artifacts = await loadArtifacts(selectedTopicId)
-                const markdownArtifacts = artifacts.filter((art) => art.kind === 'md')
-                if (markdownArtifacts.length > 0) {
-                    autoSelectLatest(selectedTopicId, markdownArtifacts)
-                    selectedArtifactId = getSelectedArtifactId(selectedTopicId)
+            /*  선택된 참조 보고서 (미사용)
+                let selectedArtifactId = getSelectedArtifactId(selectedTopicId)
+
+                // 참조 보고서 선택: 선택된 아티팩트가 없으면 자동으로 최신 선택 (MD 파일만)
+                if (!selectedArtifactId) {
+                    const artifacts = await loadArtifacts(selectedTopicId)
+                    const markdownArtifacts = artifacts.filter((art) => art.kind === 'md')
+                    if (markdownArtifacts.length > 0) {
+                        autoSelectLatest(selectedTopicId, markdownArtifacts)
+                        selectedArtifactId = getSelectedArtifactId(selectedTopicId)
+                    }
                 }
-            }
+            */
 
+            // 서버에 사용자 메시지 전달 (응답은 현재 미사용)
             await topicApi.askTopic(selectedTopicId, {
                 content: message,
-                artifact_id: selectedArtifactId,
+                artifact_id: null, // 참조 보고서 미사용으로 현재는 서버에서 가장 최신 md 파일 참조
                 include_artifact_content: true
             })
 
-            // 서버에서 새 메시지 가져와 병합
-            // 임시 사용자 메시지는 서버의 정식 메시지로 교체됨
+            // 서버에서 새 메시지 가져와 병합 (임시 사용자 메시지는 제거 후, 서버의 정식 메시지로 추가)
             await messageStore.mergeNewMessages(selectedTopicId)
+            
+            /*
+                참조 보고서 미사용
+                // Artifact 갱신
+                const refreshedArtifacts: Artifact[] = await refreshArtifacts(selectedTopicId)
 
-            // Artifact 갱신
-            const refreshedArtifacts: Artifact[] = await refreshArtifacts(selectedTopicId)
-
-            // 새로운 MD 파일이 생성되므로 참조 보고서를 최신 MD 파일로 선택
-            autoSelectLatest(selectedTopicId, refreshedArtifacts)
+                // 새로운 MD 파일이 생성되므로 참조 보고서를 최신 MD 파일로 선택
+                autoSelectLatest(selectedTopicId, refreshedArtifacts)
+            */
         } catch (error: any) {
             console.error('Error sending message:', error)
             antdMessage.error('메시지 전송에 실패했습니다.')
         } finally {
+            // 메시지가 전송 된 후, 메시지 생성 중인 쓰레드 목록에서 현재 쓰레드 제거
             useTopicStore.getState().removeGeneratingTopicId(selectedTopicId)
         }
     }
@@ -102,21 +99,27 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, setMessages
      */
     const handleDeleteMessage = async (
         messageId: number,
+        messageclientId: number,
         setSelectedReport: (report: any) => void,
-        selectedReport: any,
-        currentMessages: MessageUI[]
+        selectedReport: any
     ) => {
+        // 현재 선택된 토픽이 없는 경우는 메시지 삭제 불가
         if (!selectedTopicId) {
             antdMessage.error('주제가 선택되지 않았습니다.')
             return false
         }
 
+        // 메시지 삭제 로딩 시작
         useMessageStore.getState().setIsDeletingMessage(true)
 
         try {
             // 마지막 메시지인지 확인 (마지막 메시지인 경우 토픽도 삭제 필수)
-            const isLastMessage = messageId === 1
+            // 0은 사용자의 첫 메시지
+            // 1은 어시스턴트의 계획 메시지
+            // 2는 어시스턴트의 보고서 메시지
+            const isLastMessage = messageclientId === 2
 
+            // 메시지 삭제 요청
             await messageApi.deleteMessage(selectedTopicId, messageId)
 
             // 미리보기 중인 보고서가 삭제된 메시지의 것이면 닫기
@@ -126,14 +129,16 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, setMessages
 
             // 마지막 메시지였다면 토픽도 삭제
             if (isLastMessage) {
-                const {deleteTopicById} = useTopicStore.getState()
+                // 토픽 삭제
+                const {deleteTopicById, setSelectedTemplateId} = useTopicStore.getState()
                 await deleteTopicById(selectedTopicId)
 
                 // 메시지 스토어에서 해당 토픽의 메시지 클리어
                 useMessageStore.getState().clearMessages(selectedTopicId)
 
-                // 토픽 초기화
+                // 현재 토픽 초기화
                 setSelectedTopicId(null)
+                setSelectedTemplateId(null)
 
                 antdMessage.success('마지막 메시지가 삭제되어 대화가 종료되었습니다.')
             } else {
@@ -145,10 +150,11 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, setMessages
 
             return true
         } catch (error: any) {
-            console.error('useChatActions > handleDeleteMessage >', error)
+            console.error('useChatActions >> handleDeleteMessage >> ', error)
             antdMessage.error('메시지 삭제에 실패했습니다.')
             return false
         } finally {
+            // 메시지 삭제 로딩 종료
             useMessageStore.getState().setIsDeletingMessage(false)
         }
     }

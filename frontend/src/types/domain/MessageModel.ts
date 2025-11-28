@@ -1,4 +1,4 @@
-import type {Artifact} from '../types/artifact'
+import type {Artifact} from '@/types/artifact'
 
 export type MessageRole = 'user' | 'assistant' | 'system'
 

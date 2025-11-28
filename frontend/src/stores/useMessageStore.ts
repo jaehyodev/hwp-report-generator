@@ -4,8 +4,8 @@ import {messageApi} from '../services/messageApi'
 import {artifactApi} from '../services/artifactApi'
 import {mapMessageResponsesToModels, mapMessageModelsToUI} from '../mapper/messageMapper'
 import {enrichMessagesWithArtifacts} from '../utils/messageHelpers'
-import type {MessageModel} from '../models/MessageModel'
-import type {MessageUI} from '../models/ui/MessageUI'
+import type {MessageModel} from '@/types/domain/MessageModel'
+import type {MessageUI} from '@/types/ui/MessageUI'
 
 /**
  * useMessageStore.ts
@@ -24,6 +24,7 @@ interface MessageStore {
     isDeletingMessage: boolean
     messageLoadingTopicIds: Set<number> // 메시지 로딩 중인 토픽 ID 목록
 
+    // 보고서 생성 상태
     generatingReportStatus?: {
         topicId: number
         status: string
@@ -260,7 +261,7 @@ export const useMessageStore = create<MessageStore>((set, get) => {
                         return true
                     }
 
-                    // 두 번째 메시지부터: ID가 없는 사용자 메시지는 임시이므로 제거
+                    // 두 번째 메시지부터: ID가 없는 사용자 메시지는 제거 (서버에서 가져옴)
                     if (msg.role === 'user' && !msg.id) {
                         console.log(`[${index}] 임시 메시지 제거:`, msg.content.substring(0, 50))
                         return false

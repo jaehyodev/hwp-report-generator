@@ -1,7 +1,6 @@
 /**
  * 토큰 사용량 도메인 모델
  */
-
 export interface TokenUsageModel {
     userId: number
     username: string

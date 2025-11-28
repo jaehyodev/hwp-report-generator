@@ -98,7 +98,7 @@ export const API_ENDPOINTS = {
     UPDATE_PROMPT_SYSTEM: (templateId: number) => `/api/templates/${templateId}/prompt-system`, // System Prompt 업데이트
     REGENERATE_PROMPT_SYSTEM: (templateId: number) => `/api/templates/${templateId}/regenerate-prompt-system`, // System Prompt 재생성
     ADMIN_LIST_TEMPLATES: '/api/templates/admin/templates' // 관리자: 전체 템플릿 조회
-} as const
+}
 
 /**
  * 로컬스토리지 키 이름
@@ -108,7 +108,7 @@ export const API_ENDPOINTS = {
 export const STORAGE_KEYS = {
     ACCESS_TOKEN: 'access_token', // JWT 토큰 저장 키
     USER: 'user' // 사용자 정보 저장 키
-} as const
+}
 
 /**
  * UI 설정 상수
@@ -128,4 +128,4 @@ export const UI_CONFIG = {
          */
         SIDEBAR_TOPICS_PER_PAGE: 5
     }
-} as const
+}

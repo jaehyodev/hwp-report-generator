@@ -1,7 +1,7 @@
 import type { AllTokenUsageResponse } from "@/services/adminApi";
 import type { UserTokenUsageResponse } from "@/services/adminApi";
-import type { TokenUsageModel } from "@/models/TokenUsageModel";
-import type { TokenUsageUI } from "@/models/ui/TokenUsageUI";
+import type { TokenUsageModel } from "@/types/domain/TokenUsageModel";
+import type { TokenUsageUI } from "@/types/ui/TokenUsageUI";
 import { isoStringToDate, formatDateToString } from "@/utils/formatters";
 import type { To } from "react-router-dom";
 

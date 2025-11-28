@@ -7,7 +7,7 @@ import type {ColumnsType} from 'antd/es/table'
 import type {Dayjs} from 'dayjs'
 // ✨ 훅 이름과 import 경로를 useTokenUsage로 변경합니다.
 import {useTokenUsage} from '@/hooks/useTokenUsage'
-import type {TokenUsageUI} from '@/models/ui/TokenUsageUI' // TokenUsageUI 타입을 가져옵니다.
+import type {TokenUsageUI} from '@/types/ui/TokenUsageUI' // TokenUsageUI 타입을 가져옵니다.
 
 import styles from './AdminDashboard.module.css'
 import {formatDate} from '@/utils/formatters'
