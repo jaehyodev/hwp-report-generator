@@ -1,6 +1,8 @@
 import {useState, useEffect} from 'react'
-import {Input, Card, Button, Empty, Spin, Row, Col, message} from 'antd'
+import {Input, Card, Button, Empty, Spin, Row, Col} from 'antd'
 import {FileTextOutlined, CheckCircleFilled} from '@ant-design/icons'
+import {useMessage} from '../../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../../constants'
 import {templateApi} from '../../services/templateApi'
 import type {TemplateListItem} from '../../types/template'
 import {formatDate} from '../../utils/formatters'
@@ -25,6 +27,7 @@ interface TemplateSelectionViewProps {
  * 4. "보고서 생성 시작하기" 버튼으로 대화 시작
  */
 const TemplateSelectionView = ({onStartChat}: TemplateSelectionViewProps) => {
+    const {antdMessage} = useMessage()
     const [templates, setTemplates] = useState<TemplateListItem[]>([])
     const [filteredTemplates, setFilteredTemplates] = useState<TemplateListItem[]>([])
     const [loading, setLoading] = useState(false)
@@ -44,7 +47,7 @@ const TemplateSelectionView = ({onStartChat}: TemplateSelectionViewProps) => {
                 setSelectedTemplateId(data[0].id)
             }
         } catch (error: any) {
-            message.error(error.message || '템플릿 목록을 불러오는데 실패했습니다.')
+            antdMessage.error(error.message || TOAST_MESSAGES.TEMPLATE_LOAD_FAILED)
         } finally {
             setLoading(false)
         }
@@ -69,7 +72,7 @@ const TemplateSelectionView = ({onStartChat}: TemplateSelectionViewProps) => {
     // 보고서 생성 시작
     const handleStartChat = () => {
         if (!selectedTemplateId) {
-            message.warning('템플릿을 선택해주세요.')
+            antdMessage.warning(TOAST_MESSAGES.TEMPLATE_SELECT_REQUIRED)
             return
         }
 

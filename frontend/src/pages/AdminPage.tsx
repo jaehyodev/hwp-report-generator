@@ -1,6 +1,8 @@
 import {useState} from 'react'
-import {Card, Table, Switch, Button, Space, message, Tag, Modal} from 'antd'
+import {Card, Table, Switch, Button, Space, Tag, Modal} from 'antd'
 import {ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, KeyOutlined} from '@ant-design/icons'
+import {useMessage} from '../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../constants'
 import type {ColumnsType} from 'antd/es/table'
 import MainLayout from '../components/layout/MainLayout'
 import AdminSidebar from '../components/layout/AdminSidebar'
@@ -14,6 +16,7 @@ import {formatDate} from '../utils/formatters'
 import styles from './AdminPage.module.css'
 
 const AdminPage = () => {
+    const {antdMessage} = useMessage()
     const {users, isLoading, refetch, approveUser, rejectUser, resetPassword} = useUsers()
     const [resettingUserId, setResettingUserId] = useState<number | null>(null)
     const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
@@ -26,13 +29,13 @@ const AdminPage = () => {
         try {
             if (currentValue) {
                 await rejectUser(userId)
-                message.success('사용자가 비활성화되었습니다.')
+                antdMessage.success(TOAST_MESSAGES.USER_DEACTIVATED)
             } else {
                 await approveUser(userId)
-                message.success('사용자가 활성화되었습니다.')
+                antdMessage.success(TOAST_MESSAGES.USER_ACTIVATED)
             }
         } catch (error: any) {
-            message.error(error.response?.data?.detail || '상태 변경에 실패했습니다.')
+            antdMessage.error(error.response?.data?.detail || TOAST_MESSAGES.USER_STATUS_CHANGE_FAILED)
         }
     }
 
@@ -49,7 +52,7 @@ const AdminPage = () => {
             setIsPasswordModalOpen(true)
         } catch (error: any) {
             console.error('비밀번호 초기화 실패:', error)
-            message.error(error.response?.data?.detail || '비밀번호 초기화에 실패했습니다.')
+            antdMessage.error(error.response?.data?.detail || TOAST_MESSAGES.PASSWORD_RESET_FAILED)
         } finally {
             setResettingUserId(null)
         }

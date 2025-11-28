@@ -1,7 +1,8 @@
 import React, {useState, useEffect} from 'react'
 import {MenuOutlined, EditOutlined, DeleteOutlined} from '@ant-design/icons'
-import {message as antdMessage} from 'antd'
 import {useNavigate} from 'react-router-dom'
+import {useMessage} from '../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../constants'
 import Sidebar from '../components/layout/Sidebar'
 import MainLayout from '../components/layout/MainLayout'
 import TopicEditModal from '../components/topic/TopicEditModal'
@@ -12,6 +13,7 @@ import styles from './TopicListPage.module.css'
 import {UI_CONFIG} from '../constants'
 
 const TopicListPage: React.FC = () => {
+    const {antdMessage} = useMessage()
     const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false)
     const [editingTopic, setEditingTopic] = useState<Topic | null>(null)
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
@@ -28,7 +30,7 @@ const TopicListPage: React.FC = () => {
             try {
                 await loadPageTopics(1, pageSize)
             } catch (error: any) {
-                antdMessage.error('대화 목록을 불러오는데 실패했습니다.')
+                antdMessage.error(error.response?.data?.detail || TOAST_MESSAGES.TOPIC_LOAD_FAILED)
                 console.error('Failed to load topics:', error)
             }
         }
@@ -102,7 +104,7 @@ const TopicListPage: React.FC = () => {
         try {
             await loadPageTopics(page, pageSize)
         } catch (error: any) {
-            antdMessage.error('대화 목록을 불러오는데 실패했습니다.')
+            antdMessage.error(error.response?.data?.detail || TOAST_MESSAGES.TOPIC_LOAD_FAILED)
             console.error('Failed to load topics:', error)
         }
     }

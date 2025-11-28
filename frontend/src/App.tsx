@@ -2,6 +2,7 @@ import {BrowserRouter as Router, Routes, Route, Navigate} from 'react-router-dom
 import '@ant-design/v5-patch-for-react-19'
 import {App as AntdApp} from 'antd'
 import {ThemeProvider} from './contexts/ThemeContext'
+import {MessageProvider} from './contexts/MessageContext'
 import {AuthProvider} from './context/AuthContext'
 import PrivateRoute from './components/auth/PrivateRoute'
 import PublicRoute from './components/auth/PublicRoute'
@@ -36,8 +37,10 @@ const App = () => {
         <ThemeProvider>
             {/* Ant Design App: Modal, message 같은 전역 컴포넌트 사용 가능하게 함 */}
             <AntdApp>
-                {/* 인증 Context: 로그인 사용자 정보를 앱 전체에서 사용 가능 */}
-                <AuthProvider>
+                {/* Message Context: 테마 적용된 antdMessage 인스턴스 제공 */}
+                <MessageProvider>
+                    {/* 인증 Context: 로그인 사용자 정보를 앱 전체에서 사용 가능 */}
+                    <AuthProvider>
                     {/* 라우터: URL에 따라 다른 페이지를 보여줌 */}
                     <Router>
                             <Routes>
@@ -108,8 +111,9 @@ const App = () => {
                             </Routes>
                         </Router>
                     </AuthProvider>
-                </AntdApp>
-            </ThemeProvider>
+                </MessageProvider>
+            </AntdApp>
+        </ThemeProvider>
     )
 }
 

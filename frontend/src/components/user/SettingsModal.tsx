@@ -1,6 +1,8 @@
 import React, {useEffect, useState} from 'react'
-import {Modal, Spin, message, Switch} from 'antd'
+import {Modal, Spin, Switch} from 'antd'
 import {UserOutlined, CloseOutlined, SettingOutlined} from '@ant-design/icons'
+import {useMessage} from '../../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../../constants'
 import {authApi} from '../../services/authApi'
 import {useTheme} from '../../hooks/useTheme'
 import type {UserData} from '../../types/user'
@@ -24,6 +26,7 @@ interface SettingsModalProps {
 type TabType = 'general' | 'profile'
 
 const SettingsModal: React.FC<SettingsModalProps> = ({user, isOpen, onClose}) => {
+    const {antdMessage} = useMessage()
     const [userData, setUserData] = useState<UserData | null>(user)
     const [loading, setLoading] = useState(false)
     const [activeTab, setActiveTab] = useState<TabType>('general')
@@ -45,7 +48,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({user, isOpen, onClose}) =>
             const data = await authApi.getMyInfo()
             setUserData(data)
         } catch (error: any) {
-            message.error('사용자 정보를 불러올 수 없습니다.')
+            antdMessage.error(TOAST_MESSAGES.USER_INFO_LOAD_FAILED)
         } finally {
             setLoading(false)
         }

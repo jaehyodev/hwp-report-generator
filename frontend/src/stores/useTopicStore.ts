@@ -1,5 +1,4 @@
 import {create} from 'zustand'
-import {message as antdMessage} from 'antd'
 import {topicApi} from '../services/topicApi'
 import {messageApi} from '../services/messageApi'
 import {artifactApi} from '../services/artifactApi'
@@ -313,8 +312,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
         // 보고서 계획 요청 + 메시지 관리
         handleTopicPlanWithMessages: async (templateId, userMessage, addMessages) => {
             if (!userMessage.trim()) {
-                antdMessage.warning('메시지를 입력해주세요.')
-                return
+                throw new Error('EMPTY_MESSAGE')
             }
 
             const tempTopicId = 0 // 임시 topicId 고정
@@ -372,7 +370,6 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             } catch (error: any) {
                 console.error('개요 요청 실패:', error)
                 const currentError = get().planError
-                antdMessage.error(currentError || '개요 생성에 실패했습니다.')
 
                 // 에러 메시지 추가
                 const errorMsgModel: MessageModel = {
@@ -388,6 +385,9 @@ export const useTopicStore = create<TopicStore>((set, get) => {
 
                 // PLAN 생성 실패 - GeneratingIndicator 숨기기
                 get().removeGeneratingTopicId(tempTopicId)
+
+                // 에러를 다시 throw하여 호출자에서 처리하도록 함
+                throw error
             }
         },
 
@@ -447,8 +447,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             const { plan, selectedTemplateId } = state
 
             if (!plan) {
-                antdMessage.error('계획 정보가 없습니다.')
-                return { ok: false }
+                // antdMessage.error('계획 정보가 없습니다.')
+                return { ok: false, error: 'NO_PLAN' }
             }
 
             console.log('generateReportFromPlan >> plan >> ', plan)
@@ -462,11 +462,11 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                 // 보고서 생성 버튼 클릭 시점에는 selectedTopicId=0 (계획 모드)
                 get().addGeneratingTopicId(0)
 
-                antdMessage.loading({
-                    content: '보고서 생성 요청 중...',
-                    key: `generate-${realTopicId}`,
-                    duration: 0
-                })
+                // antdMessage.loading({
+                //     content: '보고서 생성 요청 중...',
+                //     key: `generate-${realTopicId}`,
+                //     duration: 0
+                // })
 
                 // 백그라운드 보고서 생성 API 호출 (새로운 API)
                 const response = await topicApi.generateTopicBackground(realTopicId, {
@@ -475,15 +475,15 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                     template_id: templateId
                 })
 
-                antdMessage.destroy(`generate-${realTopicId}`)
+                // antdMessage.destroy(`generate-${realTopicId}`)
 
                 // 202 Accepted - 백그라운드에서 생성 중
                 if (response.status === 'generating') {
-                    antdMessage.loading({
-                        content: '보고서 생성 중...',
-                        key: `generating-${realTopicId}`,
-                        duration: 0
-                    })
+                    // antdMessage.loading({
+                    //     content: '보고서 생성 중...',
+                    //     key: `generating-${realTopicId}`,
+                    //     duration: 0
+                    // })
 
                     // 폴링으로 상태 확인 (3초마다, 최대 30초)
                     // let attempts = 0
@@ -603,8 +603,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 isCompleted = true
                                 unsubscribe()
 
-                                antdMessage.destroy(`generating-${realTopicId}`)
-                                antdMessage.success('보고서가 생성되었습니다.')
+                                // antdMessage.destroy(`generating-${realTopicId}`)
+                                // antdMessage.success('보고서가 생성되었습니다.')
 
                                 // 메시지 처리
                                 const planMessages = messageStore.getMessages(0)
@@ -644,8 +644,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 isCompleted = true
                                 unsubscribe()
 
-                                antdMessage.destroy(`generating-${realTopicId}`)
-                                antdMessage.error('보고서 생성에 실패했습니다.')
+                                // antdMessage.destroy(`generating-${realTopicId}`)
+                                // antdMessage.error('보고서 생성에 실패했습니다.')
                                 get().removeGeneratingTopicId(0)
                                 messageStore.setGeneratingReportStatus(undefined)
                             }
@@ -655,8 +655,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                             unsubscribe()
 
                             console.error('SSE error:', error)
-                            antdMessage.destroy(`generating-${realTopicId}`)
-                            antdMessage.error('보고서 상태 확인 중 오류가 발생했습니다.')
+                            // antdMessage.destroy(`generating-${realTopicId}`)
+                            // antdMessage.error('보고서 상태 확인 중 오류가 발생했습니다.')
                             get().removeGeneratingTopicId(0)
                             messageStore.setGeneratingReportStatus(undefined)
                         }
@@ -665,8 +665,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                 return { ok: true }
             } catch (error: any) {
                 console.error('보고서 생성 실패:', error)
-                antdMessage.destroy(`generate-${realTopicId}`)
-                antdMessage.error('보고서 생성에 실패했습니다.')
+                // antdMessage.destroy(`generate-${realTopicId}`)
+                // antdMessage.error('보고서 생성에 실패했습니다.')
                 get().removeGeneratingTopicId(0)
                 return { ok: false, error: error}
             }

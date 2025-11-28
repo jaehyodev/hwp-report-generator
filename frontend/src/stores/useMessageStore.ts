@@ -1,5 +1,4 @@
 import {create} from 'zustand'
-import {message as antdMessage} from 'antd'
 import {messageApi} from '../services/messageApi'
 import {artifactApi} from '../services/artifactApi'
 import {mapMessageResponsesToModels, mapMessageModelsToUI} from '../mapper/messageMapper'
@@ -162,7 +161,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
                 }
             } catch (error: any) {
                 console.error('Failed to load messages:', error)
-                antdMessage.error('메시지를 불러오는데 실패했습니다.')
+                // 토스트는 컴포넌트에서 처리 (서버 메시지 우선, 없으면 TOAST_MESSAGES.MESSAGE_LOAD_FAILED)
+                throw error
             } finally {
                 get().removeMessageLoadingTopicId(topicId)
             }
@@ -202,7 +202,8 @@ export const useMessageStore = create<MessageStore>((set, get) => {
                 }
             } catch (error: any) {
                 console.error('Failed to load messages:', error)
-                antdMessage.error('메시지를 불러오는데 실패했습니다.')
+                // 토스트는 컴포넌트에서 처리 (서버 메시지 우선, 없으면 TOAST_MESSAGES.MESSAGE_LOAD_FAILED)
+                throw error
             } finally {
                 get().removeMessageLoadingTopicId(topicId)
             }
@@ -231,7 +232,7 @@ export const useMessageStore = create<MessageStore>((set, get) => {
                 }
             } catch (error) {
                 console.error('Failed to reload messages:', error)
-                antdMessage.error('메시지를 불러오는데 실패했습니다.')
+                // 토스트는 컴포넌트에서 처리 (서버 메시지 우선, 없으면 TOAST_MESSAGES.MESSAGE_LOAD_FAILED)
                 throw error
             }
         },

@@ -1,6 +1,8 @@
 import {useState} from 'react'
-import {Modal, Form, Input, Upload, Button, message} from 'antd'
+import {Modal, Form, Input, Upload, Button} from 'antd'
 import {FileOutlined, CloseOutlined} from '@ant-design/icons'
+import {useMessage} from '../../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../../constants'
 import type {UploadFile, RcFile} from 'antd/es/upload'
 import styles from './TemplateUploadModal.module.css'
 
@@ -28,6 +30,7 @@ interface TemplateUploadModalProps {
 }
 
 const TemplateUploadModal = ({open, onClose, uploading, onUpload}: TemplateUploadModalProps) => {
+    const {antdMessage} = useMessage()
     const [form] = Form.useForm()
     const [fileList, setFileList] = useState<UploadFile[]>([])
 
@@ -36,14 +39,14 @@ const TemplateUploadModal = ({open, onClose, uploading, onUpload}: TemplateUploa
         // 확장자 검증
         const isHwpx = file.name.toLowerCase().endsWith('.hwpx')
         if (!isHwpx) {
-            message.error('HWPX 파일만 업로드 가능합니다.')
+            antdMessage.error(TOAST_MESSAGES.TEMPLATE_HWPX_ONLY)
             return false
         }
 
         // 파일 크기 검증 (10MB)
         const isLt10M = file.size / 1024 / 1024 < 10
         if (!isLt10M) {
-            message.error('파일 크기는 10MB 이하여야 합니다.')
+            antdMessage.error(TOAST_MESSAGES.TEMPLATE_SIZE_LIMIT)
             return false
         }
 
@@ -72,13 +75,13 @@ const TemplateUploadModal = ({open, onClose, uploading, onUpload}: TemplateUploa
             const values = await form.validateFields()
 
             if (fileList.length === 0) {
-                message.error('파일을 선택해주세요.')
+                antdMessage.error(TOAST_MESSAGES.TEMPLATE_FILE_REQUIRED)
                 return
             }
 
             const uploadFile = fileList[0]
             if (!uploadFile.originFileObj) {
-                message.error('파일 정보가 올바르지 않습니다.')
+                antdMessage.error(TOAST_MESSAGES.TEMPLATE_FILE_INVALID)
                 return
             }
 

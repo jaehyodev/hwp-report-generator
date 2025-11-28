@@ -1,5 +1,7 @@
 import React, {useState, useEffect} from 'react'
-import {Modal, Input, message} from 'antd'
+import {Modal, Input} from 'antd'
+import {useMessage} from '../../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../../constants'
 import {useTopicStore} from '../../stores/useTopicStore'
 import type {Topic} from '../../types/topic'
 import styles from './TopicEditModal.module.css'
@@ -12,6 +14,7 @@ interface TopicEditModalProps {
 }
 
 const TopicEditModal: React.FC<TopicEditModalProps> = ({topic, isOpen, onClose, onSuccess}) => {
+    const {antdMessage} = useMessage()
     const [editTitle, setEditTitle] = useState('')
     const [isSaving, setIsSaving] = useState(false)
     const {updateTopicById} = useTopicStore()
@@ -28,12 +31,12 @@ const TopicEditModal: React.FC<TopicEditModalProps> = ({topic, isOpen, onClose, 
 
         const trimmedTitle = editTitle.trim()
         if (!trimmedTitle) {
-            message.error('제목을 입력해주세요.')
+            antdMessage.error(TOAST_MESSAGES.TOPIC_TITLE_EMPTY)
             return
         }
 
         if (trimmedTitle === (topic.generated_title || topic.input_prompt)) {
-            message.info('변경사항이 없습니다.')
+            antdMessage.info(TOAST_MESSAGES.TOPIC_TITLE_NO_CHANGE)
             onClose()
             return
         }
@@ -44,12 +47,12 @@ const TopicEditModal: React.FC<TopicEditModalProps> = ({topic, isOpen, onClose, 
                 generated_title: trimmedTitle
             })
 
-            message.success('제목이 수정되었습니다.')
+            antdMessage.success(TOAST_MESSAGES.TOPIC_TITLE_UPDATE_SUCCESS)
             onClose()
             onSuccess?.()
         } catch (error: any) {
             console.error('TopicEditModal > failed >', error)
-            message.error(error.message || '제목 수정에 실패했습니다.')
+            antdMessage.error(error.message || TOAST_MESSAGES.TOPIC_TITLE_UPDATE_FAILED)
         } finally {
             setIsSaving(false)
         }

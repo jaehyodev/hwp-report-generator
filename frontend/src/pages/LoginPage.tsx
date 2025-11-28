@@ -1,12 +1,15 @@
 import {useState} from 'react'
-import {Form, Input, Button, Card, message} from 'antd'
+import {Form, Input, Button, Card} from 'antd'
 import {UserOutlined, LockOutlined} from '@ant-design/icons'
+import {useMessage} from '../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../constants'
 import {useNavigate, Link} from 'react-router-dom'
 import {useAuth} from '../hooks/useAuth'
 import type {LoginRequest} from '../types/auth'
 import styles from './LoginPage.module.css'
 
 const LoginPage = () => {
+    const {antdMessage} = useMessage()
     const [loading, setLoading] = useState(false)
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const {login} = useAuth()
@@ -16,7 +19,7 @@ const LoginPage = () => {
         setLoading(true)
         try {
             await login(values)
-            message.success('로그인 성공!')
+            antdMessage.success(TOAST_MESSAGES.LOGIN_SUCCESS)
             navigate('/')
         } catch (error: any) {
             // 에러 메시지 표시

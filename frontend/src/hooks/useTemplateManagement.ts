@@ -1,5 +1,4 @@
 import {useState, useEffect, useCallback} from 'react'
-import {message} from 'antd'
 import {templateApi} from '../services/templateApi'
 import type {TemplateListItem, AdminTemplateItem} from '../types/template'
 
@@ -9,11 +8,17 @@ import type {TemplateListItem, AdminTemplateItem} from '../types/template'
  * 템플릿 관리 커스텀 훅
  * - 템플릿 목록 조회, 삭제, 상세 모달 관리 로직
  * - TemplateManagementPage와 AdminTemplateManagement에서 공통으로 사용
+ * - 토스트는 호출하는 컴포넌트에서 처리
  */
 
 interface UseTemplateManagementOptions {
     /** true: 관리자용 (전체 템플릿), false: 사용자용 (내 템플릿) */
     isAdmin?: boolean
+}
+
+interface TemplateResult {
+    ok: boolean
+    error?: string
 }
 
 export const useTemplateManagement = <T extends TemplateListItem | AdminTemplateItem>(options: UseTemplateManagementOptions = {}) => {
@@ -32,13 +37,15 @@ export const useTemplateManagement = <T extends TemplateListItem | AdminTemplate
      * - 관리자: 전체 사용자의 템플릿
      * - 일반 사용자: 내 템플릿
      */
-    const loadTemplates = useCallback(async () => {
+    const loadTemplates = useCallback(async (): Promise<TemplateResult> => {
         setLoading(true)
         try {
             const data = isAdmin ? await templateApi.listAllTemplates() : await templateApi.listTemplates()
             setTemplates(data as T[])
+            return {ok: true}
         } catch (error: any) {
-            message.error('템플릿 목록을 불러오는데 실패했습니다.')
+            const serverMessage = error.response?.data?.detail || error.response?.data?.error?.message
+            return {ok: false, error: serverMessage || 'TEMPLATE_LOAD_FAILED'}
         } finally {
             setLoading(false)
         }
@@ -73,11 +80,10 @@ export const useTemplateManagement = <T extends TemplateListItem | AdminTemplate
      * - 상세 모달이 열려있으면 닫기
      */
     const handleDelete = useCallback(
-        async (templateId: number) => {
+        async (templateId: number): Promise<TemplateResult> => {
             setDeleting(true)
             try {
                 await templateApi.deleteTemplate(templateId)
-                message.success('템플릿이 삭제되었습니다.')
 
                 // 상세 모달이 열려있으면 닫기
                 if (detailModalOpen && selectedTemplateId === templateId) {
@@ -86,8 +92,10 @@ export const useTemplateManagement = <T extends TemplateListItem | AdminTemplate
 
                 // 목록 새로고침
                 await loadTemplates()
+                return {ok: true}
             } catch (error: any) {
-                message.error('템플릿 삭제에 실패했습니다.')
+                const serverMessage = error.response?.data?.detail || error.response?.data?.error?.message
+                return {ok: false, error: serverMessage || 'TEMPLATE_DELETE_FAILED'}
             } finally {
                 setDeleting(false)
             }
@@ -101,21 +109,20 @@ export const useTemplateManagement = <T extends TemplateListItem | AdminTemplate
      *
      * @param file - 업로드할 HWPX 파일
      * @param title - 템플릿 제목
-     * @returns 업로드 성공 여부
+     * @returns 업로드 성공/실패 결과
      */
     const handleUpload = useCallback(
-        async (file: File, title: string): Promise<boolean> => {
+        async (file: File, title: string): Promise<TemplateResult> => {
             setUploading(true)
             try {
                 await templateApi.uploadTemplate(file, title)
-                message.success('템플릿이 업로드되었습니다.')
 
                 // 목록 새로고침
                 await loadTemplates()
-                return true
+                return {ok: true}
             } catch (error: any) {
-                message.error('템플릿 업로드에 실패했습니다.')
-                return false
+                const serverMessage = error.response?.data?.detail || error.response?.data?.error?.message
+                return {ok: false, error: serverMessage || 'TEMPLATE_UPLOAD_FAILED'}
             } finally {
                 setUploading(false)
             }

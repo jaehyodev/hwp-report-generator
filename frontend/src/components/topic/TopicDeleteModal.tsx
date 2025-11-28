@@ -1,6 +1,8 @@
 import React from 'react'
-import {Modal, message} from 'antd'
+import {Modal} from 'antd'
 import {ExclamationCircleOutlined} from '@ant-design/icons'
+import {useMessage} from '../../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../../constants'
 import {useTopicStore} from '../../stores/useTopicStore'
 import type {Topic} from '../../types/topic'
 import styles from './TopicDeleteModal.module.css'
@@ -13,6 +15,7 @@ interface TopicDeleteModalProps {
 }
 
 const TopicDeleteModal: React.FC<TopicDeleteModalProps> = ({topic, isOpen, onClose, onSuccess}) => {
+    const {antdMessage} = useMessage()
     const {deleteTopicById} = useTopicStore()
 
     const handleDelete = async () => {
@@ -20,12 +23,12 @@ const TopicDeleteModal: React.FC<TopicDeleteModalProps> = ({topic, isOpen, onClo
 
         try {
             await deleteTopicById(topic.id)
-            message.success('토픽이 삭제되었습니다.')
+            antdMessage.success(TOAST_MESSAGES.TOPIC_DELETE_SUCCESS)
             onClose()
             onSuccess?.()
         } catch (error: any) {
             console.error('TopicDeleteModal > failed >', error)
-            message.error(error.message || '토픽 삭제에 실패했습니다.')
+            antdMessage.error(error.message || TOAST_MESSAGES.TOPIC_DELETE_FAILED)
         }
     }
 

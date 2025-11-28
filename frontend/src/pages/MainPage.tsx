@@ -1,6 +1,7 @@
 import {useState, useRef, useEffect} from 'react'
-import {message as antdMessage} from 'antd'
 import {MenuOutlined} from '@ant-design/icons'
+import {useMessage} from '../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../constants'
 import {OutlineMessage} from '../components/chat/OutlineMessage'
 import ChatMessage from '../components/chat/ChatMessage'
 import ChatInput, {type ChatInputHandle} from '../components/chat/ChatInput'
@@ -22,6 +23,8 @@ import {useMessages} from '../hooks/useMessages'
 import {useReportPreview} from '../hooks/useReportPreview'
 
 const MainPage = () => {
+    const {antdMessage} = useMessage()
+
     // 주제 관리
     const {
         selectedTopicId,
@@ -95,7 +98,7 @@ const MainPage = () => {
 
         const currentPlan = useTopicStore.getState().plan?.plan || ''
         if (!currentPlan) {
-            antdMessage.error('계획 정보가 없습니다.')
+            antdMessage.error(TOAST_MESSAGES.NO_PLAN)
             return
         }
 

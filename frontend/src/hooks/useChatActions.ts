@@ -1,4 +1,3 @@
-import {message as antdMessage} from 'antd'
 import {topicApi} from '../services/topicApi'
 import {messageApi} from '../services/messageApi'
 import {useTopicStore} from '../stores/useTopicStore'
@@ -10,6 +9,7 @@ import type {MessageModel} from '@/types/domain/MessageModel'
  *
  * 메시지 전송 및 삭제 커스텀 훅
  * - MessageModel 기반으로 리팩토링
+ * - 토스트는 호출하는 컴포넌트에서 처리
  */
 
 interface UseChatActionsOptions {
@@ -19,16 +19,30 @@ interface UseChatActionsOptions {
     refreshMessages: (topicId: number) => Promise<void>
 }
 
+/**
+ * 결과 타입 정의
+ */
+interface SendMessageResult {
+    ok: boolean
+    error?: string // 에러 코드 (TOAST_MESSAGES 키)
+}
+
+interface DeleteMessageResult {
+    ok: boolean
+    error?: string // 에러 코드 (TOAST_MESSAGES 키)
+    isLastMessage?: boolean
+}
+
 export const useChatActions = ({selectedTopicId, setSelectedTopicId, refreshMessages}: UseChatActionsOptions) => {
     /**
      * 메시지 전송 핸들러
      * - MessageModel 기반으로 동작
+     * @returns {SendMessageResult} 성공/실패 결과와 에러 코드
      */
-    const handleSendMessage = async (message: string, files: File[], webSearchEnabled: boolean) => {
+    const handleSendMessage = async (message: string, files: File[], webSearchEnabled: boolean): Promise<SendMessageResult> => {
         // 주제가 없는 지 확인
         if (selectedTopicId === null) {
-            antdMessage.warning('대화를 시작하려면 먼저 주제를 선택하세요.')
-            return
+            return { ok: false, error: 'TOPIC_SELECT_FIRST' }
         }
 
         const messageStore = useMessageStore.getState()
@@ -75,7 +89,7 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, refreshMess
 
             // 서버에서 새 메시지 가져와 병합 (임시 사용자 메시지는 제거 후, 서버의 정식 메시지로 추가)
             await messageStore.mergeNewMessages(selectedTopicId)
-            
+
             /*
                 참조 보고서 미사용
                 // Artifact 갱신
@@ -84,9 +98,12 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, refreshMess
                 // 새로운 MD 파일이 생성되므로 참조 보고서를 최신 MD 파일로 선택
                 autoSelectLatest(selectedTopicId, refreshedArtifacts)
             */
+            return { ok: true }
         } catch (error: any) {
             console.error('Error sending message:', error)
-            antdMessage.error('메시지 전송에 실패했습니다.')
+            // 서버 에러 메시지가 있으면 전달, 없으면 기본 코드 전달
+            const serverMessage = error.response?.data?.detail || error.response?.data?.error?.message
+            return { ok: false, error: serverMessage || 'MESSAGE_SEND_FAILED' }
         } finally {
             // 메시지가 전송 된 후, 메시지 생성 중인 쓰레드 목록에서 현재 쓰레드 제거
             useTopicStore.getState().removeGeneratingTopicId(selectedTopicId)
@@ -96,17 +113,17 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, refreshMess
     /**
      * 메시지 삭제 핸들러
      * - MessageModel 기반으로 동작
+     * @returns {DeleteMessageResult} 성공/실패 결과와 에러 코드
      */
     const handleDeleteMessage = async (
         messageId: number,
         messageclientId: number,
         setSelectedReport: (report: any) => void,
         selectedReport: any
-    ) => {
+    ): Promise<DeleteMessageResult> => {
         // 현재 선택된 토픽이 없는 경우는 메시지 삭제 불가
         if (!selectedTopicId) {
-            antdMessage.error('주제가 선택되지 않았습니다.')
-            return false
+            return { ok: false, error: 'TOPIC_NOT_SELECTED' }
         }
 
         // 메시지 삭제 로딩 시작
@@ -140,19 +157,16 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, refreshMess
                 setSelectedTopicId(null)
                 setSelectedTemplateId(null)
 
-                antdMessage.success('마지막 메시지가 삭제되어 대화가 종료되었습니다.')
+                return { ok: true, isLastMessage: true }
             } else {
-                antdMessage.success('메시지가 삭제되었습니다.')
-
                 // 아티팩트 자동 갱신 (삭제된 메시지의 아티팩트도 함께 삭제됨)
                 await refreshMessages(selectedTopicId)
+                return { ok: true, isLastMessage: false }
             }
-
-            return true
         } catch (error: any) {
             console.error('useChatActions >> handleDeleteMessage >> ', error)
-            antdMessage.error('메시지 삭제에 실패했습니다.')
-            return false
+            const serverMessage = error.response?.data?.detail || error.response?.data?.error?.message
+            return { ok: false, error: serverMessage || 'MESSAGE_DELETE_FAILED' }
         } finally {
             // 메시지 삭제 로딩 종료
             useMessageStore.getState().setIsDeletingMessage(false)

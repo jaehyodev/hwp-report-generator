@@ -129,3 +129,86 @@ export const UI_CONFIG = {
         SIDEBAR_TOPICS_PER_PAGE: 5
     }
 }
+
+/**
+ * 토스트 메시지 상수
+ * - 서버에서 받아오지 않는 클라이언트 측 메시지
+ */
+export const TOAST_MESSAGES = {
+    // 공통
+    LOADING: '로딩 중...',
+
+    // 토픽/계획
+    EMPTY_MESSAGE: '메시지를 입력해주세요.',
+    NO_PLAN: '계획 정보가 없습니다.',
+    PLAN_FAILED: '개요 생성에 실패했습니다.',
+    PLAN_GENERATION_FAILED: '보고서 계획 생성에 실패했습니다.',
+
+    // 보고서 생성
+    REPORT_REQUESTING: '보고서 생성 요청 중...',
+    REPORT_GENERATING: '보고서 생성 중...',
+    REPORT_SUCCESS: '보고서가 생성되었습니다.',
+    REPORT_FAILED: '보고서 생성에 실패했습니다.',
+    REPORT_STATUS_ERROR: '보고서 상태 확인 중 오류가 발생했습니다.',
+
+    // 메시지
+    MESSAGE_LOAD_FAILED: '메시지를 불러오는데 실패했습니다.',
+    MESSAGE_SEND_FAILED: '메시지 전송에 실패했습니다.',
+    MESSAGE_DELETE_SUCCESS: '메시지가 삭제되었습니다.',
+    MESSAGE_DELETE_FAILED: '메시지 삭제에 실패했습니다.',
+    LAST_MESSAGE_DELETE_SUCCESS: '마지막 메시지가 삭제되어 대화가 종료되었습니다.',
+
+    // 토픽
+    TOPIC_NOT_SELECTED: '주제가 선택되지 않았습니다.',
+    TOPIC_SELECT_FIRST: '대화를 시작하려면 먼저 주제를 선택하세요.',
+    TOPIC_LOAD_FAILED: '토픽 목록을 불러오는데 실패했습니다.',
+    TOPIC_DELETE_SUCCESS: '토픽이 삭제되었습니다.',
+    TOPIC_DELETE_FAILED: '토픽 삭제에 실패했습니다.',
+    TOPIC_TITLE_EMPTY: '제목을 입력해주세요.',
+    TOPIC_TITLE_NO_CHANGE: '변경사항이 없습니다.',
+    TOPIC_TITLE_UPDATE_SUCCESS: '제목이 수정되었습니다.',
+    TOPIC_TITLE_UPDATE_FAILED: '제목 수정에 실패했습니다.',
+
+    // 아티팩트/다운로드
+    ARTIFACT_NEW_TOPIC_FIRST: '새로운 주제를 먼저 입력하세요.',
+    ARTIFACT_LOAD_FAILED: '보고서 목록을 불러오는데 실패했습니다.',
+    HWPX_DOWNLOADING: 'HWPX 파일 다운로드 중...',
+    HWPX_DOWNLOAD_SUCCESS: 'HWPX 파일이 다운로드되었습니다.',
+    HWPX_DOWNLOAD_FAILED: 'HWPX 파일 다운로드에 실패했습니다.',
+    PREVIEW_LOAD_FAILED: '미리보기를 불러오는데 실패했습니다.',
+
+    // 템플릿
+    TEMPLATE_LOAD_FAILED: '템플릿 목록을 불러오는데 실패했습니다.',
+    TEMPLATE_SELECT_REQUIRED: '템플릿을 선택해주세요.',
+    TEMPLATE_DELETE_SUCCESS: '템플릿이 삭제되었습니다.',
+    TEMPLATE_DELETE_FAILED: '템플릿 삭제에 실패했습니다.',
+    TEMPLATE_UPLOAD_SUCCESS: '템플릿이 업로드되었습니다.',
+    TEMPLATE_UPLOAD_FAILED: '템플릿 업로드에 실패했습니다.',
+    TEMPLATE_FILE_REQUIRED: '파일을 선택해주세요.',
+    TEMPLATE_FILE_INVALID: '파일 정보가 올바르지 않습니다.',
+    TEMPLATE_HWPX_ONLY: 'HWPX 파일만 업로드 가능합니다.',
+    TEMPLATE_SIZE_LIMIT: '파일 크기는 10MB 이하여야 합니다.',
+    TEMPLATE_PROMPT_NO_CHANGE: '변경된 내용이 없습니다.',
+    TEMPLATE_PROMPT_SAVE_SUCCESS: '프롬프트가 저장되었습니다.',
+    TEMPLATE_PROMPT_SAVE_FAILED: '프롬프트 저장에 실패했습니다.',
+
+    // 인증
+    LOGIN_SUCCESS: '로그인 성공!',
+    LOGOUT_SUCCESS: '로그아웃되었습니다.',
+    LOGOUT_FAILED: '로그아웃 중 오류가 발생했습니다.',
+    PASSWORD_CHANGE_SUCCESS: '비밀번호가 변경되었습니다.',
+    PASSWORD_CHANGE_FAILED: '비밀번호 변경에 실패했습니다.',
+    REGISTER_SUCCESS: '회원가입이 완료되었습니다. 관리자 승인 후 로그인 가능합니다.',
+    REGISTER_FAILED: '회원가입에 실패했습니다.',
+
+    // 관리자
+    USER_DEACTIVATED: '사용자가 비활성화되었습니다.',
+    USER_ACTIVATED: '사용자가 활성화되었습니다.',
+    USER_STATUS_CHANGE_FAILED: '상태 변경에 실패했습니다.',
+    PASSWORD_RESET_FAILED: '비밀번호 초기화에 실패했습니다.',
+    USER_INFO_LOAD_FAILED: '사용자 정보를 불러올 수 없습니다.',
+    PROMPT_LOAD_FAILED: '프롬프트를 불러오는데 실패했습니다.',
+    PROMPT_SAVE_SUCCESS: '프롬프트가 저장되었습니다.',
+    PROMPT_SAVE_FAILED: '프롬프트 저장에 실패했습니다.',
+    PROMPT_RESET: '기본 프롬프트로 초기화되었습니다.'
+}

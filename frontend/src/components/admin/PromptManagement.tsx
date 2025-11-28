@@ -1,6 +1,8 @@
 import React, {useState} from 'react'
-import {Card, Button, Input, Form, Space, message, Typography, Divider} from 'antd'
+import {Card, Button, Input, Form, Space, Typography, Divider} from 'antd'
 import {SaveOutlined, ReloadOutlined} from '@ant-design/icons'
+import {useMessage} from '../../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../../constants'
 import styles from './PromptManagement.module.css'
 
 const {TextArea} = Input
@@ -13,6 +15,7 @@ interface PromptFormData {
 }
 
 const PromptManagement: React.FC = () => {
+    const {antdMessage} = useMessage()
     const [form] = Form.useForm<PromptFormData>()
     const [isLoading, setIsLoading] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
@@ -64,11 +67,7 @@ const PromptManagement: React.FC = () => {
             // 임시로 기본값 설정
             form.setFieldsValue(defaultPrompts)
         } catch (error: any) {
-            message.error({
-                content: '프롬프트를 불러오는데 실패했습니다.',
-                key: 'load-prompts',
-                duration: 3
-            })
+            antdMessage.error(TOAST_MESSAGES.PROMPT_LOAD_FAILED)
             console.error('Failed to load prompts:', error)
             // 실패 시에도 기본값 표시
             form.setFieldsValue(defaultPrompts)
@@ -88,9 +87,9 @@ const PromptManagement: React.FC = () => {
             // 임시 딜레이 (API 호출 시뮬레이션)
             await new Promise((resolve) => setTimeout(resolve, 1000))
 
-            message.success('프롬프트가 저장되었습니다.')
+            antdMessage.success(TOAST_MESSAGES.PROMPT_SAVE_SUCCESS)
         } catch (error: any) {
-            message.error('프롬프트 저장에 실패했습니다.')
+            antdMessage.error(TOAST_MESSAGES.PROMPT_SAVE_FAILED)
             console.error('Failed to save prompts:', error)
         } finally {
             setIsSaving(false)
@@ -99,7 +98,7 @@ const PromptManagement: React.FC = () => {
 
     const handleReset = () => {
         form.setFieldsValue(defaultPrompts)
-        message.info('기본 프롬프트로 초기화되었습니다.')
+        antdMessage.info(TOAST_MESSAGES.PROMPT_RESET)
     }
 
     return (

@@ -1,5 +1,4 @@
 import {useState} from 'react'
-import {message as antdMessage} from 'antd'
 import {artifactApi} from '../services/artifactApi'
 
 interface ReportData {
@@ -17,10 +16,16 @@ interface DownloadedFile {
     timestamp: Date
 }
 
+interface DownloadResult {
+    ok: boolean
+    error?: string
+}
+
 /**
  * useReportPreview 커스텀 훅
  *
  * 보고서 미리보기 및 다운로드 상태 관리
+ * - 토스트는 호출하는 컴포넌트에서 처리
  *
  * @returns 보고서 미리보기 관련 상태 및 핸들러
  */
@@ -44,19 +49,12 @@ export const useReportPreview = () => {
 
     /**
      * 보고서 다운로드 핸들러
+     * @returns {DownloadResult} 성공/실패 결과
      */
-    const handleDownload = async (reportData: ReportData) => {
+    const handleDownload = async (reportData: ReportData): Promise<DownloadResult> => {
         try {
-            antdMessage.loading({
-                content: 'HWPX 파일 다운로드 중...',
-                key: 'download',
-                duration: 0
-            })
-
             const hwpxFilename = reportData.filename.replace('.md', '.hwpx')
             await artifactApi.downloadMessageHwpx(reportData.messageId, hwpxFilename)
-
-            antdMessage.destroy('download')
 
             const downloadedFile: DownloadedFile = {
                 id: reportData.messageId,
@@ -67,10 +65,11 @@ export const useReportPreview = () => {
             }
 
             setDownloadedFiles((prev) => [...prev, downloadedFile])
-            antdMessage.success('HWPX 파일이 다운로드되었습니다.')
+            return {ok: true}
         } catch (error: any) {
             console.error('Download failed:', error)
-            antdMessage.error('HWPX 파일 다운로드에 실패했습니다.')
+            const serverMessage = error.response?.data?.detail || error.response?.data?.error?.message
+            return {ok: false, error: serverMessage || 'HWPX_DOWNLOAD_FAILED'}
         }
     }
 

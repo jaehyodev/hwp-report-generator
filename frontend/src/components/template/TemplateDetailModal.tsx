@@ -1,6 +1,8 @@
 import {useState, useEffect} from 'react'
-import {Modal, Button, Tag, message as antdMessage} from 'antd'
+import {Modal, Button, Tag} from 'antd'
 import {TagsOutlined} from '@ant-design/icons'
+import {useMessage} from '../../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../../constants'
 import {templateApi} from '../../services/templateApi'
 import type {TemplateDetail} from '../../types/template'
 import {formatFileSize, formatDate} from '../../utils/formatters'
@@ -27,6 +29,7 @@ interface TemplateDetailModalProps {
 }
 
 const TemplateDetailModal: React.FC<TemplateDetailModalProps> = ({open, templateId, onClose}) => {
+    const {antdMessage} = useMessage()
     const [template, setTemplate] = useState<TemplateDetail | null>(null)
     const [loading, setLoading] = useState(false)
 
@@ -91,7 +94,7 @@ const TemplateDetailModal: React.FC<TemplateDetailModalProps> = ({open, template
         if (!templateId) return
 
         if (!hasAnyChanges()) {
-            antdMessage.info('변경된 내용이 없습니다.')
+            antdMessage.info(TOAST_MESSAGES.TEMPLATE_PROMPT_NO_CHANGE)
             return
         }
 
@@ -129,11 +132,11 @@ const TemplateDetailModal: React.FC<TemplateDetailModalProps> = ({open, template
                 }
             }
 
-            antdMessage.success('프롬프트가 저장되었습니다.')
+            antdMessage.success(TOAST_MESSAGES.TEMPLATE_PROMPT_SAVE_SUCCESS)
             onClose()
         } catch (error: any) {
             console.error('TemplateDetailModal > handleSave', error)
-            antdMessage.error('프롬프트 저장에 실패했습니다.')
+            antdMessage.error(TOAST_MESSAGES.TEMPLATE_PROMPT_SAVE_FAILED)
         } finally {
             setIsSaving(false)
         }

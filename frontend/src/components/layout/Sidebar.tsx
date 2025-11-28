@@ -11,8 +11,10 @@ import {
     LogoutOutlined,
     FileOutlined
 } from '@ant-design/icons'
-import {message, Dropdown} from 'antd'
+import {Dropdown} from 'antd'
 import type {MenuProps} from 'antd'
+import {useMessage} from '../../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../../constants'
 import {useNavigate} from 'react-router-dom'
 import {useAuth} from '../../hooks/useAuth'
 import {useTopicStore} from '../../stores/useTopicStore'
@@ -28,6 +30,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({isOpen, onToggle, onTopicSelect, onNewTopic}) => {
+    const {antdMessage} = useMessage()
     const {user, logout} = useAuth()
     const navigate = useNavigate()
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -41,7 +44,7 @@ const Sidebar: React.FC<SidebarProps> = ({isOpen, onToggle, onTopicSelect, onNew
             try {
                 await loadSidebarTopics()
             } catch (error) {
-                message.error('토픽 목록을 불러오는데 실패했습니다.')
+                antdMessage.error(TOAST_MESSAGES.TOPIC_LOAD_FAILED)
                 console.error('Failed to load topics:', error)
             }
         }
@@ -80,11 +83,11 @@ const Sidebar: React.FC<SidebarProps> = ({isOpen, onToggle, onTopicSelect, onNew
     const handleLogout = async () => {
         try {
             await logout()
-            message.success('로그아웃되었습니다.')
+            antdMessage.success(TOAST_MESSAGES.LOGOUT_SUCCESS)
             navigate('/login')
         } catch (error) {
             console.error('Logout error:', error)
-            message.error('로그아웃 중 오류가 발생했습니다.')
+            antdMessage.error(TOAST_MESSAGES.LOGOUT_FAILED)
         }
     }
 

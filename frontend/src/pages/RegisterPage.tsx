@@ -1,12 +1,15 @@
 import React, {useState} from 'react'
-import {Form, Input, Button, Card, message} from 'antd'
+import {Form, Input, Button, Card} from 'antd'
 import {UserOutlined, LockOutlined, MailOutlined} from '@ant-design/icons'
+import {useMessage} from '../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../constants'
 import {useNavigate, Link} from 'react-router-dom'
 import {useAuth} from '../hooks/useAuth'
 import type {RegisterRequest} from '../types/auth'
 import styles from './RegisterPage.module.css'
 
 const RegisterPage: React.FC = () => {
+    const {antdMessage} = useMessage()
     const [loading, setLoading] = useState(false)
     const {register} = useAuth()
     const navigate = useNavigate()
@@ -17,10 +20,10 @@ const RegisterPage: React.FC = () => {
             // confirmPassword 제외하고 백엔드로 전송
             const {confirmPassword, ...registerData} = values
             await register(registerData)
-            message.success('회원가입이 완료되었습니다. 관리자 승인 후 로그인 가능합니다.')
+            antdMessage.success(TOAST_MESSAGES.REGISTER_SUCCESS)
             navigate('/login')
         } catch (error: any) {
-            message.error(error.response?.data?.detail || '회원가입에 실패했습니다.')
+            antdMessage.error(error.response?.data?.detail || TOAST_MESSAGES.REGISTER_FAILED)
         } finally {
             setLoading(false)
         }

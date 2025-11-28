@@ -1,6 +1,8 @@
 import React, {useState} from 'react'
-import {Form, Input, Button, Card, message} from 'antd'
+import {Form, Input, Button, Card} from 'antd'
 import {LockOutlined} from '@ant-design/icons'
+import {useMessage} from '../contexts/MessageContext'
+import {TOAST_MESSAGES} from '../constants'
 import {useNavigate} from 'react-router-dom'
 import {useAuth} from '../hooks/useAuth'
 import type {ChangePasswordRequest} from '../types/auth'
@@ -8,6 +10,7 @@ import MainLayout from '../components/layout/MainLayout'
 import styles from './ChangePasswordPage.module.css'
 
 const ChangePasswordPage: React.FC = () => {
+    const {antdMessage} = useMessage()
     const [loading, setLoading] = useState(false)
     const {changePassword} = useAuth()
     const navigate = useNavigate()
@@ -19,10 +22,10 @@ const ChangePasswordPage: React.FC = () => {
                 current_password: values.current_password,
                 new_password: values.new_password
             })
-            message.success('비밀번호가 변경되었습니다.')
+            antdMessage.success(TOAST_MESSAGES.PASSWORD_CHANGE_SUCCESS)
             navigate('/')
         } catch (error: any) {
-            message.error(error.response?.data?.detail || '비밀번호 변경에 실패했습니다.')
+            antdMessage.error(error.response?.data?.detail || TOAST_MESSAGES.PASSWORD_CHANGE_FAILED)
         } finally {
             setLoading(false)
         }
