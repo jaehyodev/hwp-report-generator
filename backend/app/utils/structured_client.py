@@ -66,8 +66,6 @@ class StructuredClaudeClient:
         section_schema: dict,
         source_type: str,
         context_messages: Optional[List[dict]] = None,
-        temperature: float = 0.7,
-        max_tokens: int = 4000
     ) -> "StructuredReportResponse":
         """구조화된 보고서 생성 (Structured Outputs 사용)
 
@@ -116,8 +114,6 @@ class StructuredClaudeClient:
             system_prompt=system_prompt,
             messages=messages,
             json_schema=json_schema,
-            temperature=temperature,
-            max_tokens=max_tokens
         )
 
         # StructuredReportResponse로 파싱
@@ -157,6 +153,7 @@ class StructuredClaudeClient:
                     "type": "array",
                     "items": {
                         "type": "object",
+                        "additionalProperties": False, 
                         "properties": {
                             "id": {
                                 "type": "string",
@@ -172,7 +169,6 @@ class StructuredClaudeClient:
                             "order": {
                                 "type": "integer",
                                 "description": "섹션 순서 (1-based)",
-                                "minimum": 1
                             },
                             "source_type": {
                                 # ⭐ 동적으로 결정됨 (아래에서)
@@ -180,22 +176,6 @@ class StructuredClaudeClient:
                             "placeholder_key": {
                                 "type": ["string", "null"],
                                 "description": "템플릿 placeholder_key ({{KEY}} 형식)"
-                            },
-                            "max_length": {
-                                "type": ["integer", "null"],
-                                "description": "최대 문자 길이"
-                            },
-                            "min_length": {
-                                "type": ["integer", "null"],
-                                "description": "최소 문자 길이"
-                            },
-                            "description": {
-                                "type": ["string", "null"],
-                                "description": "섹션 설명"
-                            },
-                            "example": {
-                                "type": ["string", "null"],
-                                "description": "예시 값"
                             }
                         },
                         "required": ["id", "type", "content", "order", "source_type"]
@@ -203,7 +183,26 @@ class StructuredClaudeClient:
                 },
                 "metadata": {
                     "type": ["object", "null"],
-                    "description": "메타데이터 (생성일, 모델 등)"
+                    "description": "보고서 생성 메타데이터",
+                    "properties": {
+                        "generated_at": {
+                            "type": "string",
+                            "description": "보고서 생성 시각 (ISO-8601 형식)"
+                        },
+                        "model": {
+                            "type": "string",
+                            "description": "생성에 사용된 Claude 모델명"
+                        },
+                        "topic": {
+                            "type": "string",
+                            "description": "보고서 주제"
+                        },
+                        "total_sections": {
+                            "type": "integer",
+                            "description": "섹션 배열의 총 개수"
+                        }
+                    },
+                    "additionalProperties": False  # ⭐ 핵심: Anthropic Structured Outputs 요구사항
                 }
             },
             "required": ["sections"],
@@ -243,7 +242,7 @@ class StructuredClaudeClient:
         else:
             raise ValueError(f"Unknown source_type: {source_type}. Must be 'basic' or 'template'")
 
-        logger.debug(f"[JSON_SCHEMA] 빌드 완료")
+        logger.debug(f"""[JSON_SCHEMA] 빌드 완료: {base_schema}""" )
         return base_schema
 
     def _invoke_with_structured_output(
@@ -252,7 +251,7 @@ class StructuredClaudeClient:
         messages: List[dict],
         json_schema: dict,
         temperature: float = 0.7,
-        max_tokens: int = 4000
+        max_tokens: int = 8000
     ) -> dict:
         """Structured Outputs로 Claude API 호출
 
@@ -274,41 +273,28 @@ class StructuredClaudeClient:
             logger.debug(f"  - max_tokens: {max_tokens}")
             logger.debug(f"  - messages count: {len(messages)}")
 
-            # Structured Outputs 파라미터 - response_format 지원
-            # Note: Anthropic SDK 최신 버전에서 response_format 지원
+            # Structured Outputs 파라미터 (Beta API 필수)
+            # https://platform.claude.com/docs/en/build-with-claude/structured-outputs
             api_params = {
                 "model": self.model,
                 "max_tokens": max_tokens,
                 "system": system_prompt,
                 "messages": messages,
                 "temperature": temperature,
+                # ✅ Beta API 필수 파라미터
+                "betas": ["structured-outputs-2025-11-13"],
             }
 
             # ⚠️ Claude Structured Outputs 정식 파라미터: output_format (response_format 아님)
             # https://platform.claude.com/docs/en/build-with-claude/structured-outputs
-            try:
-                api_params["output_format"] = {
-                    "type": "json_schema",
-                    "schema": json_schema
-                    # ⚠️ 주의: name, strict 필드는 사용하지 않음 (공식 문서 기준)
-                }
-                logger.debug("[INVOKE_STRUCTURED] output_format 파라미터 추가 완료 (정식 Structured Outputs)")
-            except Exception as e:
-                logger.warning(f"[INVOKE_STRUCTURED] output_format 설정 오류: {str(e)}")
-                logger.warning("[INVOKE_STRUCTURED] Fallback: output_format 없이 진행")
+            api_params["output_format"] = {
+                "type": "json_schema",
+                "schema": json_schema
+                # ⚠️ 주의: name, strict 필드는 사용하지 않음 (공식 문서 기준)
+            }
 
-            # Claude API 호출
-            logger.debug(f"[INVOKE_STRUCTURED] Claude API 호출 (output_format 포함)")
-            try:
-                message = self.client.messages.create(**api_params)
-            except TypeError as te:
-                # output_format이 지원되지 않는 경우 (SDK 버전 문제), 제거 후 재시도
-                if "output_format" in str(te):
-                    logger.warning(f"[INVOKE_STRUCTURED] output_format 미지원 감지 - 파라미터 제거 후 재시도")
-                    del api_params["output_format"]
-                    message = self.client.messages.create(**api_params)
-                else:
-                    raise
+            logger.info("API PARAMS:\n%s",json.dumps(api_params, indent=2, ensure_ascii=False, default=str))
+            message = self.client.beta.messages.create(**api_params)
 
             # 응답 추출
             if not message.content:
@@ -328,6 +314,7 @@ class StructuredClaudeClient:
             response_text = "\n\n".join(text_blocks)
             logger.debug(f"[INVOKE_STRUCTURED] 응답 수신 - length={len(response_text)}")
 
+            logger.info("CLAUDE Structured API response_text:\n%s",json.dumps(api_params, indent=2, ensure_ascii=False, default=str))
             # JSON 파싱
             try:
                 response_json = json.loads(response_text)
@@ -496,4 +483,7 @@ class StructuredClaudeClient:
         )
 
         logger.info(f"[PROCESS_RESPONSE] 응답 처리 완료 - sections={len(processed_sections)}")
+        logger.debug("StructuredReportResponse:\n%s",  response.model_dump_json(indent=2, ensure_ascii=False)
+)
+
         return response
