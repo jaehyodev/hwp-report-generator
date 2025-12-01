@@ -191,7 +191,6 @@ This document provides comprehensive development guidelines and architecture doc
 | **placeholder_metadata_generator.py** | Placeholder metadata creation | (Enhanced with JSON schema) |
 | **claude_metadata_generator.py** | Claude-specific metadata | Model information generation |
 | **meta_info_generator.py** | Placeholder info generation | (Core metadata utility) |
-| **response_detector.py** | Claude response classification | Question vs. Report detection |
 | **prompt_filter.py** | Prompt content filtering | Input sanitization |
 
 ---
@@ -2056,26 +2055,9 @@ try:
 except ValueError as e:
     logger.error(f"Markdown parse failed: {e}")
     # Option A: Return error to user
-    # Option B: Use response_detector to check if it's a question
-    # Option C: Fallback to raw response as-is
+    # Option B: Fallback to raw response as-is
 
-# 2. Use response_detector to classify response
-from app.utils.response_detector import detect_response_type
-
-response_type = detect_response_type(response)
-if response_type == "question":
-    # This is a follow-up question, not a report
-    return {
-        "message": response,
-        "artifact": None,  # No artifact for questions
-        "type": "question"
-    }
-elif response_type == "report":
-    # Standard report → create artifact
-    content = parse_markdown_to_content(response)
-    # ... create artifact ...
-
-# 3. Implement fallback parsing
+# 1. Implement fallback parsing
 def parse_with_fallback(md_text: str) -> dict:
     """Parse markdown with graceful fallback."""
     try:

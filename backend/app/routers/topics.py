@@ -44,7 +44,6 @@ from app.utils.prompts import (
 )
 from app.utils.markdown_parser import parse_markdown_to_content
 from app.utils.exceptions import InvalidTemplateError
-from app.utils.response_detector import is_report_content, extract_question_content
 from app.database.template_db import TemplateDB, PlaceholderDB
 
 # Sequential Planning 관련 모듈
@@ -150,38 +149,50 @@ async def _build_section_schema(source_type, template_id: Optional[int]):
         return None
 
 
-async def _apply_prompt_optimization(topic_id: int, user_message_content: str):
-    """최신 프롬프트 고도화 결과를 조회하고 Claude 요청에 적용할 값을 반환한다.
+def _compose_system_prompt(
+    prompt_user: Optional[str],
+    prompt_system: Optional[str]
+) -> Optional[str]:
+    """Topic DB의 prompt_user와 prompt_system을 합성하여 system prompt 반환.
 
     Args:
-        topic_id: 고도화 결과를 조회할 토픽 ID.
-        user_message_content: 사용자 메시지 내용(최적화 매핑에 사용).
+        prompt_user: Sequential Planning 결과 (Optional)
+        prompt_system: 마크다운 규칙 (Optional)
 
     Returns:
-        tuple[str | None, list[dict]]: (system 프롬프트 또는 None, 메시지 배열 또는 빈 리스트).
+        str: 합성된 system_prompt (둘 다 NULL이면 None)
+
+    Logic:
+        1. 빈 문자열 제거 (strip 후 다시 None 체크)
+        2. prompt_user, prompt_system 중 하나 이상 존재하면 '\n\n'으로 join
+        3. 둘 다 NULL이면 None 반환
     """
-    try:
-        optimization_record = await asyncio.to_thread(
-            PromptOptimizationDB.get_latest_by_topic,
-            topic_id
-        )
-    except Exception as exc:
-        logger.warning(
-            f"[PROMPT_OPTIMIZATION] Lookup failed - topic_id={topic_id}, error={exc}",
-            exc_info=True
-        )
-        return None, []
+    # 빈 문자열 처리 (strip 후 다시 None 체크)
+    user_part = prompt_user.strip() if prompt_user else None
+    system_part = prompt_system.strip() if prompt_system else None
 
-    optimization_response = _build_prompt_optimization_response(optimization_record)
-    if not optimization_response:
-        return None, []
+    # 둘 다 없으면 None 반환
+    if not user_part and not system_part:
+        return None
 
-    optimization_payload = map_optimized_to_claude_payload(
-        optimization_response,
-        user_message_content,
-        PROMPT_OPTIMIZATION_DEFAULT_MODEL
+    # 합성
+    parts = []
+    if user_part:
+        parts.append(user_part)
+    if system_part:
+        parts.append(system_part)
+
+    composed = "\n\n".join(parts)
+
+    # 로깅
+    logger.info(
+        f"[COMPOSE_PROMPT] Composed system prompt - "
+        f"user_part={len(user_part) if user_part else 0}B, "
+        f"system_part={len(system_part) if system_part else 0}B, "
+        f"total={len(composed)}B"
     )
-    return optimization_payload.get("system"), optimization_payload.get("messages") or []
+
+    return composed
 
 
 def _build_artifact_message(user_message: str, md_content: str, seq_no: float) -> SimpleMessage:
@@ -197,13 +208,7 @@ def _build_artifact_message(user_message: str, md_content: str, seq_no: float) -
     """
     return SimpleMessage(
         role=MessageRole.USER,
-        content=f"""{user_message}
-
-현재 보고서(MD) 원문입니다. 개정 시 이를 기준으로 반영하세요.
-
-```markdown
-{md_content}
-```""",
+        content=user_message,
         seq_no=seq_no
     )
 
@@ -648,6 +653,9 @@ async def ask(
         else:
             logger.info(f"[ASK] No MD artifact found - proceeding without reference")
 
+    # === 3.5단계: JSON 섹션 스키마 생성 (새로운 단계) ===
+    section_schema = await _build_section_schema(topic.source_type, topic.template_id)
+
     # === 4단계: 컨텍스트 구성 ===
     logger.info(f"[ASK] Building context - topic_id={topic_id}")
 
@@ -688,54 +696,59 @@ async def ask(
             assistant_messages = [ref_msg]
             logger.info(f"[ASK] Including reference assistant message - message_id={ref_msg.id}")
 
+    # assistant 메시지 구성을 prompt에 구성하여 포함하게 함. 
     # 컨텍스트 배열 구성
-    context_messages = sorted(
-        user_messages + assistant_messages,
-        key=lambda m: m.seq_no
-    )
+    # context_messages = sorted(
+    #     user_messages + assistant_messages,
+    #     key=lambda m: m.seq_no
+    # )
 
+
+    # 최종 User message 구성
+    user_message = _build_user_message_content(body.content, section_schema, ref_msg.content)
+
+    claude_messages = [
+        {"role": "user", "content": user_message}
+    ]
+
+    # TODO: 문서 내용 주입 정말 필요한지 재검토
     # 문서 내용 주입
-    if body.include_artifact_content and reference_artifact:
-        logger.info(f"[ASK] Loading artifact content - artifact_id={reference_artifact.id}, path={reference_artifact.file_path}")
+    # if body.include_artifact_content and reference_artifact:
+    #     logger.info(f"[ASK] Loading artifact content - artifact_id={reference_artifact.id}, path={reference_artifact.file_path}")
 
-        try:
-            with open(reference_artifact.file_path, 'r', encoding='utf-8') as f:
-                md_content = f.read()
+    #     try:
+    #         with open(reference_artifact.file_path, 'r', encoding='utf-8') as f:
+    #             md_content = f.read()
 
-            original_length = len(md_content)
-            if len(md_content) > MAX_MD_CHARS:
-                md_content = md_content[:MAX_MD_CHARS] + "\n\n... (truncated)"
-                logger.info(f"[ASK] Artifact content truncated - original={original_length}, truncated={MAX_MD_CHARS}")
+    #         original_length = len(md_content)
+    #         if len(md_content) > MAX_MD_CHARS:
+    #             md_content = md_content[:MAX_MD_CHARS] + "\n\n... (truncated)"
+    #             logger.info(f"[ASK] Artifact content truncated - original={original_length}, truncated={MAX_MD_CHARS}")
 
-            seq_no = context_messages[-1].seq_no + 0.5 if context_messages else 0
-            artifact_msg = _build_artifact_message(content, md_content, seq_no)
+    #         seq_no = context_messages[-1].seq_no + 0.5 if context_messages else 0
+    #         artifact_msg = _build_artifact_message(content, md_content, seq_no)
 
-            context_messages.append(artifact_msg)
-            logger.info(f"[ASK] Artifact content injected - length={len(md_content)}")
+    #         context_messages.append(artifact_msg)
+    #         logger.info(f"[ASK] Artifact content injected - length={len(md_content)}")
 
-        except Exception as e:
-            logger.error(f"[ASK] Failed to load artifact content - error={str(e)}")
-            return error_response(
-                code=ErrorCode.ARTIFACT_DOWNLOAD_FAILED,
-                http_status=500,
-                message="아티팩트 파일을 읽을 수 없습니다.",
-                details={"error": str(e)}
-            )
+    #     except Exception as e:
+    #         logger.error(f"[ASK] Failed to load artifact content - error={str(e)}")
+    #         return error_response(
+    #             code=ErrorCode.ARTIFACT_DOWNLOAD_FAILED,
+    #             http_status=500,
+    #             message="아티팩트 파일을 읽을 수 없습니다.",
+    #             details={"error": str(e)}
+    #         )
 
     # Claude 메시지 배열 변환
-    claude_messages = [
-        {"role": m.role.value, "content": m.content}
-        for m in context_messages
-    ]
+    # claude_messages = [
+    #     {"role": m.role.value, "content": m.content}
+    #     for m in context_messages
+    # ]
 
     # Topic context를 첫 번째 메시지로 추가
     topic_context_msg = create_topic_context_message(topic.input_prompt)
     claude_messages = [topic_context_msg] + claude_messages
-
-    user_message_content = user_msg.content
-
-    logger.info(f"[ASK] Added topic context as first message - topic={topic.input_prompt}")
-    logger.info(f"[ASK] Topic context message: {topic_context_msg}")
 
     # 디버깅: 모든 메시지 내용 로깅 (각 메시지의 content 길이)
     for i, msg in enumerate(claude_messages):
@@ -757,28 +770,17 @@ async def ask(
             hint="max_messages를 줄이거나 include_artifact_content를 false로 설정해주세요."
         )
 
-    # === 4.5단계: 프롬프트 고도화 결과 확인 및 적용 ===
-    optimized_system_prompt, optimized_messages = await _apply_prompt_optimization(
-        topic_id,
-        user_message_content
+    # === 5단계: System Prompt 합성 (TopicDB 기반) ===
+    system_prompt = _compose_system_prompt(
+        prompt_user=topic.prompt_user,
+        prompt_system=topic.prompt_system
     )
-    if optimized_messages:
-        optimized_first_message = optimized_messages[0]
-        if claude_messages:
-            claude_messages[0] = optimized_first_message
-        else:
-            claude_messages = [optimized_first_message]
-
-    if optimized_system_prompt:
-        logger.info("[ASK] Optimization result found - using optimized prompts")
-
-    # === 5단계: System Prompt 필수 검증 ===
-    # ❌ template_id 기반 조회 제거, optimized_system_prompt도 무시
-    # ✅ topic.prompt_system 필수 사용
-    system_prompt = topic.prompt_system
 
     if not system_prompt:
-        logger.error(f"[ASK] prompt_system not found (required field) - topic_id={topic_id}, source_type={source_type_str}")
+        logger.error(
+            f"[ASK] prompt_user and prompt_system both NULL (required) - "
+            f"topic_id={topic_id}, source_type={source_type_str}"
+        )
         return error_response(
             code=ErrorCode.VALIDATION_REQUIRED_FIELD,
             http_status=400,
@@ -786,10 +788,12 @@ async def ask(
             hint="POST /api/topics/plan으로 계획을 먼저 생성해주세요."
         )
 
-    logger.info(f"[ASK] Using prompt_system from topic - source_type={source_type_str}, length={len(system_prompt)}")
+    logger.info(
+        f"[ASK] Using composed system prompt from topic DB - "
+        f"length={len(system_prompt)}B"
+    )
 
-    # === 5.5단계: JSON 섹션 스키마 생성 (새로운 단계) ===
-    section_schema = await _build_section_schema(topic.source_type, topic.template_id)
+    
 
     # === 6단계: Claude 호출 ===
     logger.info(f"[ASK] Calling Claude API - messages={len(claude_messages)}, use_json_schema={section_schema is not None}")
@@ -822,7 +826,7 @@ async def ask(
 
             json_response = await asyncio.to_thread(
                 structured_client.generate_structured_report,
-                topic=topic.title if topic.title else "Report",
+                topic=topic.generated_title if topic.generated_title else topic.input_prompt or "Report",
                 system_prompt=system_prompt,
                 section_schema=section_schema,
                 source_type=source_type_str,
@@ -831,11 +835,11 @@ async def ask(
 
             # JSON 응답 처리 (항상 StructuredReportResponse 객체)
             logger.info(f"[ASK] JSON response received - sections={len(json_response.sections)}")
-            response_text = await asyncio.to_thread(
+            markdown = await asyncio.to_thread(
                 build_report_md_from_json,
                 json_response
             )
-            logger.info(f"[ASK] Converted JSON to markdown - length={len(response_text)}")
+            logger.info(f"[ASK] Converted JSON to markdown - length={len(markdown)}")
             input_tokens = structured_client.last_input_tokens
             output_tokens = structured_client.last_output_tokens
 
@@ -845,7 +849,7 @@ async def ask(
         else:
             # 일반 모드: chat_completion() 사용 (기존 방식)
             logger.info(f"[ASK] Using standard chat_completion mode")
-            response_text, input_tokens, output_tokens = await asyncio.to_thread(
+            markdown, input_tokens, output_tokens = await asyncio.to_thread(
                 claude_client.chat_completion,
                 claude_messages,
                 system_prompt,
@@ -867,37 +871,8 @@ async def ask(
             hint="잠시 후 다시 시도해주세요."
         )
 
-    # === 7단계: 응답 형태 판별 ===
-    logger.info(f"[ASK] Detecting response type - json_converted={json_converted}")
-
-    # JSON 응답에서 변환된 경우 항상 report로 간주
-    if json_converted:
-        is_report = True
-        logger.info(f"[ASK] JSON response converted to markdown - forcing is_report=True")
-    else:
-        try:
-            is_report = is_report_content(response_text)
-        except Exception as detector_error:
-            logger.warning(
-                f"[ASK] Failed to detect response type, defaulting to report - error={detector_error}"
-            )
-            is_report = True
-
-    logger.info(f"[ASK] Response type detected - is_report={is_report}")
-
-    # === 7-1단계: 질문 응답일 경우 콘텐츠 추출 ===
-    message_content = response_text
-    if not is_report:
-        logger.info(f"[ASK] Question response detected - extracting pure content")
-        extracted_content = extract_question_content(response_text)
-
-        if extracted_content:
-            message_content = extracted_content
-            logger.info(f"[ASK] Content extracted - original={len(response_text)} chars, extracted={len(extracted_content)} chars")
-        else:
-            logger.warning(f"[ASK] Question response but extraction returned empty, using original")
-
-    # === 7-2단계: Assistant 메시지 저장 (항상 저장) ===
+    # === 7단계: Assistant 메시지 저장 ===
+    message_content = markdown
     logger.info(f"[ASK] Saving assistant message - topic_id={topic_id}, length={len(message_content)}")
 
     asst_msg = await asyncio.to_thread(
@@ -908,125 +883,109 @@ async def ask(
 
     logger.info(f"[ASK] Assistant message saved - message_id={asst_msg.id}, seq_no={asst_msg.seq_no}")
 
-    # === 8단계: 조건부 MD 파일 저장 (Artifact 상태 머신 패턴) ===
+    # === 8단계: MD artifact 저장 ===
     artifact = None
 
-    if is_report:
-        logger.info(f"[ASK] Saving MD artifact (report content - Artifact state machine)")
+    logger.info(f"[ASK] Saving MD artifact")
 
-        try:
-            # Step 1: Markdown 파싱 및 제목 추출
-            logger.info(f"[ASK] Parsing markdown content")
-            result = await asyncio.to_thread(parse_markdown_to_content, response_text)
-            generated_title = result.get("title") or "보고서"
-            logger.info(f"[ASK] Parsed successfully - title={generated_title}")
+    try:
+        # Step 1: 버전 계산
+        version = await asyncio.to_thread(
+            next_artifact_version,
+            topic_id, ArtifactKind.MD, topic.language
+        )
+        logger.info(f"[ASK] Artifact version - version={version}")
 
-            # Step 2: 마크다운 빌드
-            md_text = await asyncio.to_thread(build_report_md, result)
-            logger.info(f"[ASK] Built markdown - length={len(md_text)}")
+        # Step 2: 파일 경로 생성
+        base_dir, md_path = await asyncio.to_thread(
+            build_artifact_paths,
+            topic_id, version, "report.md"
+        )
+        logger.info(f"[ASK] Artifact path - path={md_path}")
 
-            # Step 3: 버전 계산
-            version = await asyncio.to_thread(
-                next_artifact_version,
-                topic_id, ArtifactKind.MD, topic.language
+        # Step 3: 파일 저장
+        bytes_written = await asyncio.to_thread(write_text, md_path, markdown)
+        file_hash = await asyncio.to_thread(sha256_of, md_path)
+        logger.info(f"[ASK] File written - size={bytes_written}, hash={file_hash[:16]}...")
+
+        # Step 4: Artifact DB 레코드 생성
+        artifact = await asyncio.to_thread(
+            ArtifactDB.create_artifact,
+            topic_id,
+            asst_msg.id,
+            ArtifactCreate(
+                kind=ArtifactKind.MD,
+                locale=topic.language,
+                version=version,
+                filename=md_path.name,
+                file_path=str(md_path),
+                file_size=bytes_written,
+                sha256=file_hash,
+                status=ARTIFACT_STATUS_COMPLETED,
+                progress_percent=100,
+                completed_at=datetime.utcnow().isoformat()
             )
-            logger.info(f"[ASK] Artifact version - version={version}")
+        )
+        logger.info(f"[ASK] Artifact created - artifact_id={artifact.id}, version={artifact.version}, status={artifact.status}")
 
-            # Step 4: 파일 경로 생성
-            base_dir, md_path = await asyncio.to_thread(
-                build_artifact_paths,
-                topic_id, version, "report.md"
-            )
-            logger.info(f"[ASK] Artifact path - path={md_path}")
+        # === 8-1단계: 조건부 JSON artifact 저장 ===
+        if json_converted and json_response:
+            logger.info(f"[ASK] Saving JSON artifact from StructuredReportResponse - message_id={asst_msg.id}")
 
-            # Step 5: 파일 저장 (파싱된 마크다운만)
-            bytes_written = await asyncio.to_thread(write_text, md_path, md_text)
-            file_hash = await asyncio.to_thread(sha256_of, md_path)
-
-            logger.info(f"[ASK] File written - size={bytes_written}, hash={file_hash[:16]}...")
-
-            # ✅ Step 6: Artifact DB 레코드 생성 (status="completed" + 모든 파일 정보 포함)
-            artifact = await asyncio.to_thread(
-                ArtifactDB.create_artifact,
-                topic_id,
-                asst_msg.id,
-                ArtifactCreate(
-                    kind=ArtifactKind.MD,
-                    locale=topic.language,
-                    version=version,
-                    filename=md_path.name,
-                    file_path=str(md_path),  # ✅ 완료 상태로 파일 정보 완전히 populated
-                    file_size=bytes_written,
-                    sha256=file_hash,
-                    status=ARTIFACT_STATUS_COMPLETED,  # ✅ 명시적으로 completed 상태
-                    progress_percent=100,  # ✅ 100% 완료
-                    completed_at=datetime.utcnow().isoformat()  # ✅ 완료 시간 기록
+            try:
+                # JSON 직렬화
+                json_text = await asyncio.to_thread(
+                    json_response.model_dump_json
                 )
-            )
+                logger.info(f"[ASK] JSON serialized - length={len(json_text)}")
 
-            logger.info(f"[ASK] Artifact created - artifact_id={artifact.id}, version={artifact.version}, status={artifact.status}")
+                # JSON 파일 경로 생성
+                json_filename = f"structured_{version}.json"
+                _, json_path = await asyncio.to_thread(
+                    build_artifact_paths,
+                    topic_id, version, json_filename
+                )
+                logger.info(f"[ASK] JSON artifact path - path={json_path}")
 
-            # === 8-1단계: 조건부 JSON artifact 저장 (JSON 변환 응답인 경우) ===
-            if json_converted and json_response:
-                logger.info(f"[ASK] Saving JSON artifact from StructuredReportResponse - message_id={asst_msg.id}")
+                # JSON 파일 저장
+                json_bytes_written = await asyncio.to_thread(write_text, json_path, json_text)
+                json_file_hash = await asyncio.to_thread(sha256_of, json_path)
+                logger.info(f"[ASK] JSON file written - size={json_bytes_written}, hash={json_file_hash[:16]}...")
 
-                try:
-                    # Step 1: JSON 직렬화
-                    json_text = await asyncio.to_thread(
-                        json_response.model_dump_json
+                # JSON Artifact DB 레코드 생성
+                json_artifact = await asyncio.to_thread(
+                    ArtifactDB.create_artifact,
+                    topic_id,
+                    asst_msg.id,
+                    ArtifactCreate(
+                        kind=ArtifactKind.JSON,
+                        locale=topic.language,
+                        version=version,
+                        filename=json_path.name,
+                        file_path=str(json_path),
+                        file_size=json_bytes_written,
+                        sha256=json_file_hash,
+                        status=ARTIFACT_STATUS_COMPLETED,
+                        progress_percent=100,
+                        completed_at=datetime.utcnow().isoformat()
                     )
-                    logger.info(f"[ASK] JSON serialized - length={len(json_text)}")
+                )
+                logger.info(f"[ASK] JSON artifact created - artifact_id={json_artifact.id}, version={json_artifact.version}")
 
-                    # Step 2: JSON 파일 경로 생성
-                    json_filename = f"structured_{version}.json"
-                    _, json_path = await asyncio.to_thread(
-                        build_artifact_paths,
-                        topic_id, version, json_filename
-                    )
-                    logger.info(f"[ASK] JSON artifact path - path={json_path}")
+            except Exception as json_e:
+                logger.error(f"[ASK] Failed to save JSON artifact - error={str(json_e)}")
+                # JSON artifact 실패는 비치명적 - 계속 진행
+        else:
+            logger.info(f"[ASK] Skipping JSON artifact (json_converted={json_converted}, json_response={json_response is not None})")
 
-                    # Step 3: JSON 파일 저장
-                    json_bytes_written = await asyncio.to_thread(write_text, json_path, json_text)
-                    json_file_hash = await asyncio.to_thread(sha256_of, json_path)
-                    logger.info(f"[ASK] JSON file written - size={json_bytes_written}, hash={json_file_hash[:16]}...")
-
-                    # Step 4: JSON Artifact DB 레코드 생성
-                    json_artifact = await asyncio.to_thread(
-                        ArtifactDB.create_artifact,
-                        topic_id,
-                        asst_msg.id,
-                        ArtifactCreate(
-                            kind=ArtifactKind.JSON,
-                            locale=topic.language,
-                            version=version,
-                            filename=json_path.name,
-                            file_path=str(json_path),
-                            file_size=json_bytes_written,
-                            sha256=json_file_hash,
-                            status=ARTIFACT_STATUS_COMPLETED,
-                            progress_percent=100,
-                            completed_at=datetime.utcnow().isoformat()
-                        )
-                    )
-
-                    logger.info(f"[ASK] JSON artifact created - artifact_id={json_artifact.id}, version={json_artifact.version}")
-
-                except Exception as json_e:
-                    logger.error(f"[ASK] Failed to save JSON artifact - error={str(json_e)}")
-                    # JSON artifact 실패는 비치명적 - 계속 진행 (MD artifact는 이미 생성됨)
-            else:
-                logger.info(f"[ASK] Skipping JSON artifact (json_converted={json_converted}, json_response={json_response is not None})")
-
-        except Exception as e:
-            logger.error(f"[ASK] Failed to save artifact - error={str(e)}")
-            return error_response(
-                code=ErrorCode.ARTIFACT_CREATION_FAILED,
-                http_status=500,
-                message="응답 파일 저장 중 오류가 발생했습니다.",
-                details={"error": str(e)}
-            )
-    else:
-        logger.info(f"[ASK] No artifact created (question/conversation response)")
+    except Exception as e:
+        logger.error(f"[ASK] Failed to save artifact - error={str(e)}")
+        return error_response(
+            code=ErrorCode.ARTIFACT_CREATION_FAILED,
+            http_status=500,
+            message="응답 파일 저장 중 오류가 발생했습니다.",
+            details={"error": str(e)}
+        )
 
     # === 9단계: AI 사용량 저장 ===
     logger.info(f"[ASK] Saving AI usage - message_id={asst_msg.id}")
@@ -1887,23 +1846,28 @@ async def _background_generate_report(
         claude = ClaudeClient()
 
         # User prompt 구성
-        user_prompt = f"주제: {topic}\n\n계획:\n{plan}\n\n위의 계획을 바탕으로 상세한 보고서를 작성해주세요."
+        user_prompt = _build_user_message_topic(topic, plan, section_schema)
 
-        optimized_system_prompt, _ = await _apply_prompt_optimization(
-            topic_id,
-            user_prompt
+        # === Step 2.5: System Prompt 합성 (TopicDB 기반) ===
+        system_prompt = _compose_system_prompt(
+            prompt_user=topic_obj.prompt_user,
+            prompt_system=topic_obj.prompt_system
         )
-        if optimized_system_prompt:
-            logger.info("[BACKGROUND] Optimization result found - using optimized prompts")
 
-        if optimized_system_prompt:
-            system_prompt = optimized_system_prompt
-        else:
-            logger.info("[BACKGROUND] No optimization result - using default system prompt")
+        if not system_prompt:
+            logger.warning(
+                f"[BACKGROUND] prompt_user and prompt_system both NULL - "
+                f"topic_id={topic_id}, using fallback system prompt"
+            )
             system_prompt = await asyncio.to_thread(
                 get_system_prompt,
                 template_id=template_id,
                 user_id=int(user_id) if isinstance(user_id, str) else user_id
+            )
+        else:
+            logger.info(
+                f"[BACKGROUND] Using composed system prompt from topic DB - "
+                f"length={len(system_prompt)}B"
             )
 
         start_time = time.time()
@@ -2135,3 +2099,71 @@ async def _background_generate_report(
             )
         except Exception as db_error:
             logger.error(f"[BACKGROUND] Failed to update artifact status - error={str(db_error)}")
+
+
+def _build_user_message_topic(topic: str, plan: str ,section_schema: dict) -> str:
+    """Claude에 전달할 User Message 빌드
+
+    Args:
+        topic: 보고서 주제
+        section_schema: 섹션 스키마
+
+    Returns:
+        User message 문자열
+    """
+    sections_info = json.dumps(section_schema, ensure_ascii=False, indent=2)
+
+    message = f"""당신은 구조화된 JSON 형식으로 보고서 섹션을 생성하는 전문가입니다.
+
+# 보고서 주제: {topic}
+
+
+## 보고서 작성 계획
+{plan}
+
+## 필수 섹션 메타정보
+
+아래 섹션 정의를 따라 JSON 형식으로 보고서를 작성하세요:
+
+{sections_info}
+
+## 중요 지침
+1. **반드시 JSON만 출력하세요** - 설명이나 주석 금지
+3. **order 필드 정확성** - 섹션 순서를 order에 명시하세요
+5. **모든 필수 섹션을 포함하세요** - 누락된 섹션이 없도록 확인
+
+이제 위의 섹션 정의에 맞춰 JSON 형식의 보고서를 생성하세요."""
+
+    return message
+
+def _build_user_message_content( content: str, section_schema: dict, assitant_md: str) -> str:
+    """Claude에 전달할 User Message 빌드
+
+    Args:
+        topic: 보고서 주제
+        section_schema: 섹션 스키마
+
+    Returns:
+        User message 문자열
+    """
+    sections_info = json.dumps(section_schema, ensure_ascii=False, indent=2)
+
+    message = f"""당신은 구조화된 JSON 형식으로 보고서를 생성하는 전문가입니다.
+
+## 작업 목적
+- 위 메시지들은 모두 참고용입니다.
+- 아래에 제공된 ${{현재 보고서(MD) 원문}} 근거로 해서 **{content}** 의 요청에 맞는 JSON을 생성하세요.
+
+## JSON 섹션 메타정보
+
+{sections_info}
+
+## ${{현재 보고서(MD) 원문}}
+```markdown
+
+{assitant_md}
+
+```
+
+"""
+    return message
