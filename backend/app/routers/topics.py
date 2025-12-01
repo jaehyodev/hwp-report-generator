@@ -1978,15 +1978,16 @@ async def _background_generate_report(
             progress_percent=50
         )
 
+        # TODO: 마크다운 파싱 필요 없을 경우 해당 내용 필요 없을 것 같아 우선 주석 처리 추후 응답받은 마크다운은 자체 양식으로 파싱이 필요할 경우 다시 살릴 수 있음
         # ✅ Non-blocking: 파싱을 스레드 끝에서 실행
-        parsed_content = await asyncio.to_thread(
-            parse_markdown_to_content,
-            markdown
-        )
-        built_markdown = await asyncio.to_thread(
-            build_report_md,
-            parsed_content
-        )
+        # parsed_content = await asyncio.to_thread(
+        #     parse_markdown_to_content,
+        #     markdown
+        # )
+        # built_markdown = await asyncio.to_thread(
+        #     build_report_md,
+        #     markdown
+        # )
 
         # === Step 4: MD 파일 저장 ===
         logger.info(f"[BACKGROUND] Saving MD file - topic_id={topic_id}")
@@ -1997,15 +1998,23 @@ async def _background_generate_report(
             progress_percent=70
         )
 
-        # ✅ topic_obj은 Step 0에서 이미 조회됨 (재사용)
-        version = next_artifact_version(topic_id, ArtifactKind.MD, topic_obj.language)
-        base_dir, md_path = build_artifact_paths(topic_id, version, "report.md")
+    
+        # artifact_id로 받은 artifact를 조회해서 버전 사용
+        artifact = await asyncio.to_thread(
+            ArtifactDB.get_artifact_by_id,
+            artifact_id
+        )
+        if not artifact:
+            raise ValueError(f"Artifact not found - artifact_id={artifact_id}")
+
+        md_version = artifact.version
+        base_dir, md_path = build_artifact_paths(topic_id, md_version, "report.md")
 
         # ✅ Non-blocking: 파일 I/O를 스레드 끝에서 실행
         bytes_written = await asyncio.to_thread(
             write_text,
             md_path,
-            built_markdown
+            markdown
         )
         file_hash = await asyncio.to_thread(
             sha256_of,
@@ -2028,7 +2037,7 @@ async def _background_generate_report(
         assistant_msg = await asyncio.to_thread(
             MessageDB.create_message,
             topic_id,
-            MessageCreate(role=MessageRole.ASSISTANT, content=built_markdown)
+            MessageCreate(role=MessageRole.ASSISTANT, content=markdown)
         )
 
         # ✅ Step 6: Artifact 상태 업데이트 + 파일 정보 추가 (완료)
@@ -2049,7 +2058,8 @@ async def _background_generate_report(
 
         # === Step 6-1: JSON artifact 저장 (JSON 변환 응답인 경우) ===
         if json_converted and json_response:
-            logger.info(f"[BACKGROUND] Saving JSON artifact from StructuredReportResponse - topic_id={topic_id}")
+            json_version = next_artifact_version(topic_id, ArtifactKind.JSON, topic_obj.language)
+            logger.info(f"[BACKGROUND] Saving JSON artifact from StructuredReportResponse - topic_id={topic_id} - json_version={json_version}")
 
             try:
                 # Step 1: JSON 직렬화
@@ -2059,10 +2069,10 @@ async def _background_generate_report(
                 logger.info(f"[BACKGROUND] JSON serialized - length={len(json_text)}")
 
                 # Step 2: JSON 파일 경로 생성
-                json_filename = f"structured_{version}.json"
+                json_filename = f"structured_{json_version}.json"
                 _, json_path = await asyncio.to_thread(
                     build_artifact_paths,
-                    topic_id, version, json_filename
+                    topic_id, json_version, json_filename
                 )
                 logger.info(f"[BACKGROUND] JSON artifact path - path={json_path}")
 
@@ -2072,7 +2082,7 @@ async def _background_generate_report(
                 logger.info(f"[BACKGROUND] JSON file written - size={json_bytes_written}, hash={json_file_hash[:16]}...")
 
                 # Step 4: JSON Artifact DB 레코드 생성
-                # 참고: message_id=None (백그라운드 생성이므로), version은 MD artifact와 동일
+                # 참고: message_id=None (백그라운드 생성이므로), json_version MD artifact와 동일
                 json_artifact = await asyncio.to_thread(
                     ArtifactDB.create_artifact,
                     topic_id,
@@ -2080,7 +2090,7 @@ async def _background_generate_report(
                     ArtifactCreate(
                         kind=ArtifactKind.JSON,
                         locale=topic_obj.language,
-                        version=version,
+                        version=json_version,
                         filename=json_path.name,
                         file_path=str(json_path),
                         file_size=json_bytes_written,

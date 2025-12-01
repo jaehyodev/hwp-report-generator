@@ -9,7 +9,10 @@ from typing import Optional
 import os
 import time
 import shutil
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from app.models.user import User
 from app.models.artifact import ArtifactResponse, ArtifactListResponse, ArtifactContentResponse, ArtifactCreate
@@ -467,6 +470,39 @@ async def convert_artifact_to_hwpx(
             http_status=400,
             message="MD 형식의 아티팩트만 변환할 수 있습니다.",
             details={"current_kind": artifact.kind.value}
+        )
+
+    # === JSON Artifact Validation (CRITICAL) ===
+    # 같은 topic_id와 version을 가진 JSON artifact 검색
+    logger.info(f"[CONVERT-HWPX] Validating JSON artifact - artifact_id={artifact_id}, topic_id={artifact.topic_id}, version={artifact.version}")
+
+    json_artifacts, _ = ArtifactDB.get_artifacts_by_topic(artifact.topic_id)
+    matching_json = [
+        a for a in json_artifacts
+        if a.kind == ArtifactKind.JSON and a.version == artifact.version
+    ]
+
+    if not matching_json:
+        logger.warning(f"[CONVERT-HWPX] JSON artifact not found - artifact_id={artifact_id}, topic_id={artifact.topic_id}, version={artifact.version}")
+        return error_response(
+            code=ErrorCode.ARTIFACT_NOT_FOUND,
+            http_status=400,
+            message="JSON artifact가 없습니다.",
+            hint="관리자에게 문의하세요."
+        )
+
+    json_artifact = matching_json[0]
+    logger.info(f"[CONVERT-HWPX] JSON artifact found - json_artifact_id={json_artifact.id}")
+
+    # JSON artifact 파일 존재 여부 검증
+    json_artifact_path = Path(json_artifact.file_path)
+    if not json_artifact_path.exists():
+        logger.warning(f"[CONVERT-HWPX] JSON artifact file not found - path={json_artifact.file_path}")
+        return error_response(
+            code=ErrorCode.ARTIFACT_NOT_FOUND,
+            http_status=400,
+            message="JSON artifact 파일을 찾을 수 없습니다.",
+            hint="관리자에게 문의하세요."
         )
 
     if not artifact.file_path:
