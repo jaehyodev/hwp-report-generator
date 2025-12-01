@@ -173,7 +173,7 @@ This document provides comprehensive development guidelines and architecture doc
 | **claude_client.py** | chat_completion() | LLM API integration with error handling | 150 |
 | **prompts.py** | create_dynamic_system_prompt() | System prompt generation from templates | 200 |
 | **markdown_parser.py** | parse_markdown_to_content() | MD → structured data conversion | 180 |
-| **markdown_builder.py** | build_report_md() | Structured data → MD conversion | 120 |
+| **markdown_builder.py** | build_report_md(), postprocess_headings() | Structured data → MD conversion; H2 headings → ordered lists | 204 |
 | **templates_manager.py** | extract_placeholders(), validate_hwpx() | HWPX file parsing and validation | 140 |
 | **hwp_handler.py** | (HWPX generation) | HWPX XML manipulation | 250 |
 | **sequential_planning.py** | generate_plan() | Step-by-step report planning | 219 |
@@ -351,6 +351,44 @@ Step 12: Response
   ✓ Return: topic_id, user_message, assistant_message, artifacts[], usage
   ✓ artifacts[] may contain MD and/or HWPX
   ✓ HTTP 200 OK
+```
+
+### Workflow 3.5: Markdown Response Postprocessing (NEW in v2.11)
+
+**Context:** When Claude API returns Markdown response (typically in `/ask` endpoint), the Markdown is postprocessed to convert H2 headings to ordered list format.
+
+```
+Input:  "## 배경\n내용\n## 주요내용"
+        ↓
+Process: postprocess_headings() conversion
+        ↓
+Output: "1. 배경\n내용\n2. 주요내용"
+```
+
+**Function:** `postprocess_headings(text: str) -> str` (markdown_builder.py, 84 lines)
+
+**Processing Rules:**
+1. **H2 Detection:** Match `^##(?!#)` (H2 only, exclude H3+)
+2. **Number Extraction:** Extract leading digits from H2 content (e.g., `##1.제목` → `1`)
+3. **Auto-Numbering:** If no number found, assign sequential number (max_num + 1)
+4. **Duplicate Handling:** If same number repeats, auto-increment (1, 1 → 1, 2)
+5. **Preservation:** All non-H2 content preserved (including H1, H3, bullets, etc.)
+
+**Integration Points:**
+- Called in `claude_client.py` → `generate_report()` (Markdown path only)
+- Called after Claude API response received, before artifact creation
+- Logging: INFO/DEBUG for conversions, WARN for edge cases, ERROR for exceptions
+
+**Use Case:**
+- Report generation via /ask when Claude chooses Markdown format
+- Ensures consistent list formatting for structured reports
+- No impact on JSON path (Structured Outputs mode)
+
+**Test Coverage:** 16 tests (100% coverage)
+- 7 primary test cases (TC-UT-001 through TC-UT-007)
+- 8 edge case tests (multiple spaces, special chars, H3 preservation, etc.)
+- 1 performance test (100 H2s, <100ms)
+
 ```
 
 ### Workflow 4: Sequential Planning (POST /plan, NEW in v2.4)
