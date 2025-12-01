@@ -26,10 +26,12 @@ class ArtifactKind(str, Enum):
         MD: Markdown file (.md)
         HWPX: Hangul Word Processor file (.hwpx)
         PDF: PDF document (.pdf) - reserved for future use
+        JSON: JSON structured response (.json) - Claude Structured Outputs
     """
     MD = "md"
     HWPX = "hwpx"
     PDF = "pdf"
+    JSON = "json"
 
 
 class TopicStatus(str, Enum):

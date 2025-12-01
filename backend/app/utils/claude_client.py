@@ -13,6 +13,7 @@ from anthropic import Anthropic
 # shared.constants를 import하면 자동으로 sys.path 설정됨
 from shared.constants import ClaudeConfig
 from app.utils.prompts import get_default_report_prompt, FINANCIAL_REPORT_SYSTEM_PROMPT
+from app.utils.markdown_builder import postprocess_headings
 
 # 로깅 설정
 logging.basicConfig(
@@ -247,8 +248,10 @@ class ClaudeClient:
             self.last_output_tokens = getattr(message.usage, "output_tokens", 0)
             self.last_total_tokens = self.last_input_tokens + self.last_output_tokens
 
-            # Markdown 텍스트 그대로 반환 (파싱은 호출자가 수행)
-            return content
+            # H2 마크다운을 순서 리스트로 변환 후 반환
+            processed_content = postprocess_headings(content)
+            logger.info("[CLAUDE_CLIENT] H2 headings converted to ordered list format")
+            return processed_content
 
         except Exception as e:
             logger.error(f"Claude API 호출 중 오류 발생: {str(e)}")

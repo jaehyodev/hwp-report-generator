@@ -314,10 +314,10 @@ class StructuredClaudeClient:
             response_text = "\n\n".join(text_blocks)
             logger.debug(f"[INVOKE_STRUCTURED] 응답 수신 - length={len(response_text)}")
 
-            logger.info("CLAUDE Structured API response_text:\n%s",json.dumps(api_params, indent=2, ensure_ascii=False, default=str))
             # JSON 파싱
             try:
                 response_json = json.loads(response_text)
+                logger.info("RESPONSE_JSON:\n%s",json.dumps(response_json, indent=2, ensure_ascii=False, default=str))
                 logger.info(f"[INVOKE_STRUCTURED] JSON 파싱 성공")
             except json.JSONDecodeError as e:
                 logger.error(f"[INVOKE_STRUCTURED] JSON 파싱 실패: {str(e)}")

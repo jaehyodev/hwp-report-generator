@@ -414,10 +414,8 @@ def parse_markdown_to_content(md_text: str) -> Dict[str, str]:
     for section_title, section_content in h2_sections:
         section_type = classify_section(section_title)
 
-        if section_type == "summary":
-            content["title_summary"] = section_title
-            content["summary"] = section_content
-        elif section_type == "background":
+
+        if section_type == "background":
             content["title_background"] = section_title
             content["background"] = section_content
         elif section_type == "main_content":
@@ -426,6 +424,9 @@ def parse_markdown_to_content(md_text: str) -> Dict[str, str]:
         elif section_type == "conclusion":
             content["title_conclusion"] = section_title
             content["conclusion"] = section_content
+        elif section_type == "summary":
+            content["title_summary"] = section_title
+            content["summary"] = section_content
 
     # 4. 내용이 비어있으면 전체 텍스트를 main_content로 사용
     if not any([content["summary"], content["background"],
