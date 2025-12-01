@@ -3,20 +3,21 @@ Topic management API router.
 
 Handles CRUD operations for topics (conversation threads).
 """
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import asyncio
 import json
 import time
 import logging
 from datetime import datetime
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.models.user import User
 from app.models.topic import (
     TopicCreate, TopicUpdate, TopicResponse, TopicListResponse,
-    PlanRequest, PlanResponse, PlanSection,
+    PlanRequest, PlanResponse,
     GenerateRequest, GenerateResponse,
     StatusResponse
 )
@@ -44,8 +45,7 @@ from app.utils.prompts import (
 from app.utils.markdown_parser import parse_markdown_to_content
 from app.utils.exceptions import InvalidTemplateError
 from app.utils.response_detector import is_report_content, extract_question_content
-from shared.constants import ProjectPath
-from app.database.template_db import TemplateDB
+from app.database.template_db import TemplateDB, PlaceholderDB
 
 # Sequential Planning 관련 모듈
 from app.utils.sequential_planning import sequential_planning, SequentialPlanningError, TimeoutError as SequentialPlanningTimeout
@@ -57,6 +57,155 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/topics", tags=["Topics"])
 
 PROMPT_OPTIMIZATION_DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+MAX_MD_CHARS = 30000
+MAX_CONTEXT_CHARS = 50000
+ARTIFACT_STATUS_GENERATING = "generating"
+ARTIFACT_STATUS_COMPLETED = "completed"
+ARTIFACT_STATUS_FAILED = "failed"
+
+
+@dataclass
+class SimpleMessage:
+    role: MessageRole
+    content: str
+    seq_no: float
+
+
+async def _get_topic_or_error(
+    topic_id: int,
+    current_user: User,
+    *,
+    allow_admin: bool = True,
+    use_thread: bool = True
+):
+    """토픽을 조회하고 소유권/관리자 권한을 검증한다.
+
+    Args:
+        topic_id: 조회할 토픽 ID.
+        current_user: 인증된 사용자 정보.
+        allow_admin: True일 때 관리자에게 소유권 예외를 허용.
+        use_thread: True면 DB 접근을 `asyncio.to_thread`로 감싸 이벤트 루프 블로킹을 피한다.
+
+    Returns:
+        tuple[Topic | None, dict | None]: (유효한 토픽 객체 또는 None, 실패 시 표준 에러 응답 또는 None).
+    """
+    if use_thread:
+        topic = await asyncio.to_thread(TopicDB.get_topic_by_id, topic_id)
+    else:
+        topic = TopicDB.get_topic_by_id(topic_id)
+
+    if not topic:
+        return None, error_response(
+            code=ErrorCode.TOPIC_NOT_FOUND,
+            http_status=404,
+            message="주제를 찾을 수 없습니다."
+        )
+
+    if topic.user_id != current_user.id and not (allow_admin and getattr(current_user, "is_admin", False)):
+        return None, error_response(
+            code=ErrorCode.TOPIC_UNAUTHORIZED,
+            http_status=403,
+            message="이 주제에 접근할 권한이 없습니다."
+        )
+
+    return topic, None
+
+
+async def _build_section_schema(source_type, template_id: Optional[int]):
+    """토픽의 source_type에 따라 Structured Outputs용 섹션 스키마를 생성한다.
+
+    Args:
+        source_type: TopicSourceType 또는 문자열(basic/template).
+        template_id: template 모드일 때 placeholder를 로드하기 위한 템플릿 ID.
+
+    Returns:
+        dict | None: StructuredClaudeClient가 소비하는 섹션 스키마, 생성 불가 시 None.
+    """
+    source_type_str = source_type.value if hasattr(source_type, "value") else str(source_type)
+    logger.info(f"[SCHEMA] Creating section schema - source_type={source_type_str}")
+
+    if not source_type_str or source_type_str not in ("basic", "template"):
+        logger.info("[SCHEMA] source_type not set, skipping section schema generation")
+        return None
+
+    try:
+        if source_type_str == "template" and template_id:
+            placeholders = await asyncio.to_thread(
+                PlaceholderDB.get_placeholders_by_template,
+                template_id
+            )
+            return await asyncio.to_thread(
+                create_section_schema,
+                source_type_str,
+                placeholders
+            )
+
+        return await asyncio.to_thread(create_section_schema, "basic")
+
+    except Exception as schema_error:
+        logger.warning(
+            f"[SCHEMA] Failed to create section schema - error={schema_error}",
+            exc_info=True
+        )
+        return None
+
+
+async def _apply_prompt_optimization(topic_id: int, user_message_content: str):
+    """최신 프롬프트 고도화 결과를 조회하고 Claude 요청에 적용할 값을 반환한다.
+
+    Args:
+        topic_id: 고도화 결과를 조회할 토픽 ID.
+        user_message_content: 사용자 메시지 내용(최적화 매핑에 사용).
+
+    Returns:
+        tuple[str | None, list[dict]]: (system 프롬프트 또는 None, 메시지 배열 또는 빈 리스트).
+    """
+    try:
+        optimization_record = await asyncio.to_thread(
+            PromptOptimizationDB.get_latest_by_topic,
+            topic_id
+        )
+    except Exception as exc:
+        logger.warning(
+            f"[PROMPT_OPTIMIZATION] Lookup failed - topic_id={topic_id}, error={exc}",
+            exc_info=True
+        )
+        return None, []
+
+    optimization_response = _build_prompt_optimization_response(optimization_record)
+    if not optimization_response:
+        return None, []
+
+    optimization_payload = map_optimized_to_claude_payload(
+        optimization_response,
+        user_message_content,
+        PROMPT_OPTIMIZATION_DEFAULT_MODEL
+    )
+    return optimization_payload.get("system"), optimization_payload.get("messages") or []
+
+
+def _build_artifact_message(user_message: str, md_content: str, seq_no: float) -> SimpleMessage:
+    """아티팩트 내용을 Claude 컨텍스트 메시지(SimpleMessage)로 변환한다.
+
+    Args:
+        user_message: 사용자 입력 메시지 내용.
+        md_content: 포함할 MD 원문.
+        seq_no: 컨텍스트 정렬에 사용할 seq 번호.
+
+    Returns:
+        SimpleMessage: Claude 메시지 포맷의 임시 사용자 메시지.
+    """
+    return SimpleMessage(
+        role=MessageRole.USER,
+        content=f"""{user_message}
+
+현재 보고서(MD) 원문입니다. 개정 시 이를 기준으로 반영하세요.
+
+```markdown
+{md_content}
+```""",
+        seq_no=seq_no
+    )
 
 
 class PromptOptimizationRequest(BaseModel):
@@ -236,23 +385,9 @@ async def get_topic(
         ```
     """
 
-    topic = TopicDB.get_topic_by_id(topic_id)
-
-    if not topic:
-        return error_response(
-            code=ErrorCode.TOPIC_NOT_FOUND,
-            http_status=404,
-            message="주제를 찾을 수 없습니다.",
-            hint="주제 ID를 확인해주세요."
-        )
-
-    # Check ownership
-    if topic.user_id != current_user.id and not current_user.is_admin:
-        return error_response(
-            code=ErrorCode.TOPIC_UNAUTHORIZED,
-            http_status=403,
-            message="이 주제에 접근할 권한이 없습니다."
-        )
+    topic, error = await _get_topic_or_error(topic_id, current_user)
+    if error:
+        return error
 
     return success_response(TopicResponse.model_validate(topic))
 
@@ -306,22 +441,9 @@ async def update_topic(
         ```
     """
 
-    topic = TopicDB.get_topic_by_id(topic_id)
-
-    if not topic:
-        return error_response(
-            code=ErrorCode.TOPIC_NOT_FOUND,
-            http_status=404,
-            message="주제를 찾을 수 없습니다."
-        )
-
-    # Check ownership
-    if topic.user_id != current_user.id and not current_user.is_admin:
-        return error_response(
-            code=ErrorCode.TOPIC_UNAUTHORIZED,
-            http_status=403,
-            message="이 주제를 수정할 권한이 없습니다."
-        )
+    topic, error = await _get_topic_or_error(topic_id, current_user)
+    if error:
+        return error
 
     try:
         updated_topic = TopicDB.update_topic(topic_id, update_data)
@@ -376,22 +498,9 @@ async def delete_topic(
         ```
     """
 
-    topic = TopicDB.get_topic_by_id(topic_id)
-
-    if not topic:
-        return error_response(
-            code=ErrorCode.TOPIC_NOT_FOUND,
-            http_status=404,
-            message="주제를 찾을 수 없습니다."
-        )
-
-    # Check ownership
-    if topic.user_id != current_user.id and not current_user.is_admin:
-        return error_response(
-            code=ErrorCode.TOPIC_UNAUTHORIZED,
-            http_status=403,
-            message="이 주제를 삭제할 권한이 없습니다."
-        )
+    topic, error = await _get_topic_or_error(topic_id, current_user)
+    if error:
+        return error
 
     try:
         deleted = TopicDB.delete_topic(topic_id)
@@ -444,22 +553,10 @@ async def ask(
     # === 1단계: 권한 및 검증 ===
     logger.info(f"[ASK] Start - topic_id={topic_id}, user_id={current_user.id}")
 
-    topic = await asyncio.to_thread(TopicDB.get_topic_by_id, topic_id)
-    if not topic:
-        logger.warning(f"[ASK] Topic not found - topic_id={topic_id}")
-        return error_response(
-            code=ErrorCode.TOPIC_NOT_FOUND,
-            http_status=404,
-            message="토픽을 찾을 수 없습니다."
-        )
-
-    if topic.user_id != current_user.id and not current_user.is_admin:
-        logger.warning(f"[ASK] Unauthorized - topic_id={topic_id}, owner={topic.user_id}, requester={current_user.id}")
-        return error_response(
-            code=ErrorCode.TOPIC_UNAUTHORIZED,
-            http_status=403,
-            message="이 토픽에 접근할 권한이 없습니다."
-        )
+    topic, error = await _get_topic_or_error(topic_id, current_user)
+    if error:
+        logger.warning(f"[ASK] Topic validation failed - topic_id={topic_id}")
+        return error
 
     if not topic.template_id:
         logger.warning(f"[ASK] Template missing on topic - topic_id={topic_id}")
@@ -597,28 +694,12 @@ async def ask(
                 md_content = f.read()
 
             original_length = len(md_content)
-            MAX_MD_CHARS = 30000
             if len(md_content) > MAX_MD_CHARS:
                 md_content = md_content[:MAX_MD_CHARS] + "\n\n... (truncated)"
                 logger.info(f"[ASK] Artifact content truncated - original={original_length}, truncated={MAX_MD_CHARS}")
 
-            # Create a temporary message-like object for artifact content
-            class ArtifactMessage:
-                def __init__(self, content, seq_no):
-                    self.role = MessageRole.USER
-                    self.content = content
-                    self.seq_no = seq_no
-
-            artifact_msg = ArtifactMessage(
-                content=f"""{content}
-
-현재 보고서(MD) 원문입니다. 개정 시 이를 기준으로 반영하세요.
-
-```markdown
-{md_content}
-```""",
-                seq_no=context_messages[-1].seq_no + 0.5 if context_messages else 0
-            )
+            seq_no = context_messages[-1].seq_no + 0.5 if context_messages else 0
+            artifact_msg = _build_artifact_message(content, md_content, seq_no)
 
             context_messages.append(artifact_msg)
             logger.info(f"[ASK] Artifact content injected - length={len(md_content)}")
@@ -654,7 +735,6 @@ async def ask(
 
     # 길이 검증
     total_chars = sum(len(msg["content"]) for msg in claude_messages)
-    MAX_CONTEXT_CHARS = 50000
 
     logger.info(f"[ASK] Context size - messages={len(claude_messages)}, total_chars={total_chars}, max={MAX_CONTEXT_CHARS}")
 
@@ -669,39 +749,19 @@ async def ask(
         )
 
     # === 4.5단계: 프롬프트 고도화 결과 확인 및 적용 ===
-    optimized_system_prompt: Optional[str] = None
+    optimized_system_prompt, optimized_messages = await _apply_prompt_optimization(
+        topic_id,
+        user_message_content
+    )
+    if optimized_messages:
+        optimized_first_message = optimized_messages[0]
+        if claude_messages:
+            claude_messages[0] = optimized_first_message
+        else:
+            claude_messages = [optimized_first_message]
 
-    try:
-        logger.info(f"[ASK] Checking prompt optimization result - topic_id={topic_id}")
-        optimization_record = await asyncio.to_thread(
-            PromptOptimizationDB.get_latest_by_topic,
-            topic_id
-        )
-
-        if optimization_record:
-            optimization_response = _build_prompt_optimization_response(optimization_record)
-            if optimization_response:
-                optimization_payload = map_optimized_to_claude_payload(
-                    optimization_response,
-                    user_message_content,
-                    PROMPT_OPTIMIZATION_DEFAULT_MODEL
-                )
-
-                optimized_system_prompt = optimization_payload.get("system")
-                optimized_messages = optimization_payload.get("messages") or []
-                if optimized_messages:
-                    optimized_first_message = optimized_messages[0]
-                    if claude_messages:
-                        claude_messages[0] = optimized_first_message
-                    else:
-                        claude_messages = [optimized_first_message]
-
-                logger.info("[ASK] Optimization result found - using optimized prompts")
-    except Exception as optimization_error:
-        logger.warning(
-            f"[ASK] Failed to apply optimization result - error={optimization_error}",
-            exc_info=True
-        )
+    if optimized_system_prompt:
+        logger.info("[ASK] Optimization result found - using optimized prompts")
 
     # === 5단계: System Prompt 선택 (우선순위: template > default) ===
     if optimized_system_prompt is not None:
@@ -735,49 +795,13 @@ async def ask(
             )
 
     # === 5.5단계: JSON 섹션 스키마 생성 (새로운 단계) ===
-    # source_type 정규화 (enum → 문자열)
-    source_type_str = topic.source_type.value if hasattr(topic.source_type, 'value') else str(topic.source_type)
-    logger.info(f"[ASK] Creating section schema - source_type={source_type_str}")
-
-    try:
-        section_schema = None
-
-        if source_type_str and source_type_str in ("basic", "template"):
-            # 섹션 스키마 생성
-            if source_type_str == "template" and topic.template_id:
-                # TEMPLATE 모드: placeholders 조회
-                logger.info(f"[ASK] Loading placeholders for TEMPLATE mode - template_id={topic.template_id}")
-                placeholders = await asyncio.to_thread(
-                    lambda: __import__('app.database.template_db', fromlist=['TemplateDB']).TemplateDB.get_placeholders_by_template(topic.template_id)
-                )
-                section_schema = await asyncio.to_thread(
-                    create_section_schema,
-                    source_type_str,  # ✅ 문자열로 전달
-                    placeholders
-                )
-            else:
-                # BASIC 모드: 고정 섹션
-                section_schema = await asyncio.to_thread(
-                    create_section_schema,
-                    "basic"
-                )
-
-            if section_schema:
-                logger.info(f"[ASK] Section schema created - sections={len(section_schema.get('sections', []))}")
-        else:
-            logger.info(f"[ASK] source_type not set, skipping section schema generation")
-
-    except Exception as schema_error:
-        logger.warning(
-            f"[ASK] Failed to create section schema - error={schema_error}",
-            exc_info=True
-        )
-        section_schema = None
+    section_schema = await _build_section_schema(topic.source_type, topic.template_id)
 
     # === 6단계: Claude 호출 ===
     logger.info(f"[ASK] Calling Claude API - messages={len(claude_messages)}, use_json_schema={section_schema is not None}")
 
     json_converted = False  # ✅ 변수 초기화 (Step 7에서 사용됨)
+    json_response = None  # ✅ JSON 응답 변수 초기화
     try:
         t0 = time.time()
 
@@ -940,13 +964,64 @@ async def ask(
                     file_path=str(md_path),  # ✅ 완료 상태로 파일 정보 완전히 populated
                     file_size=bytes_written,
                     sha256=file_hash,
-                    status="completed",  # ✅ 명시적으로 completed 상태
+                    status=ARTIFACT_STATUS_COMPLETED,  # ✅ 명시적으로 completed 상태
                     progress_percent=100,  # ✅ 100% 완료
                     completed_at=datetime.utcnow().isoformat()  # ✅ 완료 시간 기록
                 )
             )
 
             logger.info(f"[ASK] Artifact created - artifact_id={artifact.id}, version={artifact.version}, status={artifact.status}")
+
+            # === 8-1단계: 조건부 JSON artifact 저장 (JSON 변환 응답인 경우) ===
+            if json_converted and json_response:
+                logger.info(f"[ASK] Saving JSON artifact from StructuredReportResponse - message_id={asst_msg.id}")
+
+                try:
+                    # Step 1: JSON 직렬화
+                    json_text = await asyncio.to_thread(
+                        json_response.model_dump_json
+                    )
+                    logger.info(f"[ASK] JSON serialized - length={len(json_text)}")
+
+                    # Step 2: JSON 파일 경로 생성
+                    json_filename = f"structured_{version}.json"
+                    _, json_path = await asyncio.to_thread(
+                        build_artifact_paths,
+                        topic_id, version, json_filename
+                    )
+                    logger.info(f"[ASK] JSON artifact path - path={json_path}")
+
+                    # Step 3: JSON 파일 저장
+                    json_bytes_written = await asyncio.to_thread(write_text, json_path, json_text)
+                    json_file_hash = await asyncio.to_thread(sha256_of, json_path)
+                    logger.info(f"[ASK] JSON file written - size={json_bytes_written}, hash={json_file_hash[:16]}...")
+
+                    # Step 4: JSON Artifact DB 레코드 생성
+                    json_artifact = await asyncio.to_thread(
+                        ArtifactDB.create_artifact,
+                        topic_id,
+                        asst_msg.id,
+                        ArtifactCreate(
+                            kind=ArtifactKind.JSON,
+                            locale=topic.language,
+                            version=version,
+                            filename=json_path.name,
+                            file_path=str(json_path),
+                            file_size=json_bytes_written,
+                            sha256=json_file_hash,
+                            status=ARTIFACT_STATUS_COMPLETED,
+                            progress_percent=100,
+                            completed_at=datetime.utcnow().isoformat()
+                        )
+                    )
+
+                    logger.info(f"[ASK] JSON artifact created - artifact_id={json_artifact.id}, version={json_artifact.version}")
+
+                except Exception as json_e:
+                    logger.error(f"[ASK] Failed to save JSON artifact - error={str(json_e)}")
+                    # JSON artifact 실패는 비치명적 - 계속 진행 (MD artifact는 이미 생성됨)
+            else:
+                logger.info(f"[ASK] Skipping JSON artifact (json_converted={json_converted}, json_response={json_response is not None})")
 
         except Exception as e:
             logger.error(f"[ASK] Failed to save artifact - error={str(e)}")
@@ -1199,23 +1274,10 @@ async def generate_report_background(
     try:
         logger.info(f"[GENERATE] Started - topic_id={topic_id}, user_id={current_user.id}")
 
-        # Topic 조회 및 권한 확인
-        topic = TopicDB.get_topic_by_id(topic_id)
-        if not topic:
-            logger.warning(f"[GENERATE] Topic not found - topic_id={topic_id}")
-            return error_response(
-                code=ErrorCode.TOPIC_NOT_FOUND,
-                http_status=404,
-                message="토픽을 찾을 수 없습니다."
-            )
-
-        if topic.user_id != current_user.id and not current_user.is_admin:
-            logger.warning(f"[GENERATE] Unauthorized - topic_id={topic_id}, owner={topic.user_id}, requester={current_user.id}")
-            return error_response(
-                code=ErrorCode.TOPIC_UNAUTHORIZED,
-                http_status=403,
-                message="이 토픽에 접근할 권한이 없습니다."
-            )
+        topic, error = await _get_topic_or_error(topic_id, current_user, use_thread=False)
+        if error:
+            logger.warning(f"[GENERATE] Topic validation failed - topic_id={topic_id}")
+            return error
 
         if topic.source_type == TopicSourceType.TEMPLATE and not topic.template_id:
             logger.warning(f"[GENERATE] Template missing on template-based topic - topic_id={topic_id}")
@@ -1243,7 +1305,7 @@ async def generate_report_background(
                 filename="report.md",  # ✅ MD 파일명
                 file_path=None,  # ✅ NULL during work
                 file_size=0,
-                status="generating",  # 즉시 generating 상태
+                status=ARTIFACT_STATUS_GENERATING,  # 즉시 generating 상태
                 progress_percent=0,
                 started_at=datetime.utcnow().isoformat()
             )
@@ -1264,14 +1326,44 @@ async def generate_report_background(
             )
         )
 
-        # ✅ Task 예외 처리: 실패 시 로그 기록
+        # ✅ Task 예외 처리: 콜백에서는 빠르게 끝내기 (이벤트 루프 블로킹 금지)
         def handle_task_result(t: asyncio.Task):
+            """Task 완료 콜백 - 상태 업데이트만 수행 (로깅 제거)
+
+            이벤트 루프를 블로킹하면 다른 비동기 작업들이 대기하므로,
+            콜백 내에서는 빠른 상태 업데이트만 수행하고
+            로깅은 비동기로 따로 처리합니다.
+            """
+            exc = t.exception()
+            if exc is not None and not isinstance(exc, asyncio.CancelledError):
+                # 실패 상태 표시만 빠르게 수행 (DB 업데이트)
+                try:
+                    ArtifactDB.mark_failed(
+                        artifact_id=artifact.id,
+                        error_message=str(exc)[:500]
+                    )
+                except Exception:
+                    pass  # 콜백 내 예외는 무시
+
+            # 비동기 로깅 (이벤트 루프 블로킹 없음)
+            async def log_task_completion():
+                """Task 완료 후 로깅 (비동기)"""
+                try:
+                    await asyncio.sleep(0)  # 이벤트 루프 양보
+                    if exc is not None:
+                        if isinstance(exc, asyncio.CancelledError):
+                            logger.warning(f"[BACKGROUND] Task cancelled - topic_id={topic_id}")
+                        else:
+                            logger.error(f"[BACKGROUND] Task failed - topic_id={topic_id}, error={str(exc)}")
+                    else:
+                        logger.info(f"[BACKGROUND] Task completed successfully - topic_id={topic_id}, artifact_id={artifact.id}")
+                except Exception:
+                    pass
+
             try:
-                t.result()
-            except asyncio.CancelledError:
-                logger.warning(f"[BACKGROUND] Task cancelled - topic_id={topic_id}")
-            except Exception as e:
-                logger.error(f"[BACKGROUND] Task failed with unhandled exception - topic_id={topic_id}, error={str(e)}", exc_info=True)
+                asyncio.create_task(log_task_completion())
+            except RuntimeError:
+                pass  # 이벤트 루프 없을 경우 무시
 
         task.add_done_callback(handle_task_result)
 
@@ -1281,7 +1373,7 @@ async def generate_report_background(
         response_dict = success_response(
             GenerateResponse(
                 topic_id=topic_id,
-                status="generating",
+                status=ARTIFACT_STATUS_GENERATING,
                 message="Report generation started in background",
                 status_check_url=f"/api/topics/{topic_id}/status"
             ).model_dump()
@@ -1319,23 +1411,10 @@ async def get_generation_status_endpoint(
         StatusResponse를 포함한 ApiResponse
     """
     try:
-        # Topic 조회 및 권한 확인
-        topic = await asyncio.to_thread(TopicDB.get_topic_by_id, topic_id)
-        if not topic:
-            logger.warning(f"[STATUS] Topic not found - topic_id={topic_id}")
-            return error_response(
-                code=ErrorCode.TOPIC_NOT_FOUND,
-                http_status=404,
-                message="토픽을 찾을 수 없습니다."
-            )
-
-        if topic.user_id != current_user.id and not current_user.is_admin:
-            logger.warning(f"[STATUS] Unauthorized - topic_id={topic_id}, owner={topic.user_id}, requester={current_user.id}")
-            return error_response(
-                code=ErrorCode.TOPIC_UNAUTHORIZED,
-                http_status=403,
-                message="이 토픽에 접근할 권한이 없습니다."
-            )
+        topic, error = await _get_topic_or_error(topic_id, current_user)
+        if error:
+            logger.warning(f"[STATUS] Topic validation failed - topic_id={topic_id}")
+            return error
 
         # ✅ CHANGED: Artifact 테이블에서 최신 MD artifact 조회 (HWPX 대신)
         logger.info(f"[STATUS] Querying artifact - topic_id={topic_id}")
@@ -1399,23 +1478,10 @@ async def stream_generation_status(
     Returns:
         SSE 스트림 응답 (text/event-stream)
     """
-    # Topic 조회 및 권한 확인
-    topic = await asyncio.to_thread(TopicDB.get_topic_by_id, topic_id)
-    if not topic:
-        logger.warning(f"[STREAM] Topic not found - topic_id={topic_id}")
-        return error_response(
-            code=ErrorCode.TOPIC_NOT_FOUND,
-            http_status=404,
-            message="토픽을 찾을 수 없습니다."
-        )
-
-    if topic.user_id != current_user.id and not current_user.is_admin:
-        logger.warning(f"[STREAM] Unauthorized - topic_id={topic_id}, owner={topic.user_id}, requester={current_user.id}")
-        return error_response(
-            code=ErrorCode.TOPIC_UNAUTHORIZED,
-            http_status=403,
-            message="이 토픽에 접근할 권한이 없습니다."
-        )
+    topic, error = await _get_topic_or_error(topic_id, current_user)
+    if error:
+        logger.warning(f"[STREAM] Topic validation failed - topic_id={topic_id}")
+        return error
 
     logger.info(f"[STREAM] Started - topic_id={topic_id}, user_id={current_user.id}")
 
@@ -1447,7 +1513,7 @@ async def stream_generation_status(
                 ):
                     # Status update 이벤트
                     event_data = {
-                        "event": "status_update" if artifact.status == "generating" else "completion",
+                        "event": "status_update" if artifact.status == ARTIFACT_STATUS_GENERATING else "completion",
                         "artifact_id": artifact.id,
                         "status": artifact.status,
                         "progress_percent": artifact.progress_percent
@@ -1459,7 +1525,7 @@ async def stream_generation_status(
                     last_artifact = artifact
 
                     # 완료 또는 실패 시 종료
-                    if artifact.status in ["completed", "failed"]:
+                    if artifact.status in [ARTIFACT_STATUS_COMPLETED, ARTIFACT_STATUS_FAILED]:
                         # 최종 completion 이벤트
                         final_event = {
                             "event": "completion",
@@ -1518,33 +1584,19 @@ async def optimize_topic_prompt(
         masked_prompt
     )
 
-    # 토픽 유효성 확인
-    topic = TopicDB.get_topic_by_id(topic_id)
-    if not topic:
+    topic, error = await _get_topic_or_error(
+        topic_id,
+        current_user,
+        allow_admin=False,
+        use_thread=False
+    )
+    if error:
         logger.warning(
-            "[PROMPT_OPTIMIZATION] Topic not found - topic_id=%s, user_id=%s",
+            "[PROMPT_OPTIMIZATION] Topic validation failed - topic_id=%s, user_id=%s",
             topic_id,
             current_user.id
         )
-        return error_response(
-            code=ErrorCode.TOPIC_NOT_FOUND,
-            http_status=404,
-            message="토픽을 찾을 수 없습니다."
-        )
-
-    # 토픽 소유자 권한 확인 (관리자 예외 없이 소유자만 허용)
-    if topic.user_id != current_user.id:
-        logger.warning(
-            "[PROMPT_OPTIMIZATION] Unauthorized - topic_id=%s, owner=%s, requester=%s",
-            topic_id,
-            topic.user_id,
-            current_user.id
-        )
-        return error_response(
-            code=ErrorCode.TOPIC_UNAUTHORIZED,
-            http_status=403,
-            message="이 토픽에 접근할 권한이 없습니다."
-        )
+        return error
 
     try:
         # Claude 프롬프트 고도화 호출
@@ -1684,33 +1736,19 @@ async def get_prompt_optimization_result(
         current_user.id
     )
 
-    # 토픽 확인
-    topic = TopicDB.get_topic_by_id(topic_id)
-    if not topic:
+    topic, error = await _get_topic_or_error(
+        topic_id,
+        current_user,
+        allow_admin=False,
+        use_thread=False
+    )
+    if error:
         logger.warning(
-            "[PROMPT_OPTIMIZATION] Topic not found on fetch - topic_id=%s, user_id=%s",
+            "[PROMPT_OPTIMIZATION] Topic validation failed on fetch - topic_id=%s, user_id=%s",
             topic_id,
             current_user.id
         )
-        return error_response(
-            code=ErrorCode.TOPIC_NOT_FOUND,
-            http_status=404,
-            message="토픽을 찾을 수 없습니다."
-        )
-
-    # 권한 확인
-    if topic.user_id != current_user.id:
-        logger.warning(
-            "[PROMPT_OPTIMIZATION] Unauthorized fetch - topic_id=%s, owner=%s, requester=%s",
-            topic_id,
-            topic.user_id,
-            current_user.id
-        )
-        return error_response(
-            code=ErrorCode.TOPIC_UNAUTHORIZED,
-            http_status=403,
-            message="이 토픽에 접근할 권한이 없습니다."
-        )
+        return error
 
     try:
         # 최신 고도화 결과 조회
@@ -1832,49 +1870,14 @@ async def _background_generate_report(
             )
 
         # === Step 0.5: JSON 섹션 스키마 생성 (새로운 단계) ===
-        # source_type 정규화 (enum → 문자열)
-        source_type_str = topic_obj.source_type.value if hasattr(topic_obj.source_type, 'value') else str(topic_obj.source_type)
-        logger.info(f"[BACKGROUND] Creating section schema - source_type={source_type_str}")
-        section_schema = None
-
-        try:
-            if source_type_str and source_type_str in ("basic", "template"):
-                if source_type_str == "template" and topic_obj.template_id:
-                    # TEMPLATE 모드: placeholders 조회
-                    logger.info(f"[BACKGROUND] Loading placeholders for TEMPLATE mode - template_id={topic_obj.template_id}")
-                    placeholders = await asyncio.to_thread(
-                        lambda: __import__('app.database.template_db', fromlist=['TemplateDB']).TemplateDB.get_placeholders_by_template(topic_obj.template_id)
-                    )
-                    section_schema = await asyncio.to_thread(
-                        create_section_schema,
-                        source_type_str,  # ✅ 문자열로 전달
-                        placeholders
-                    )
-                else:
-                    # BASIC 모드: 고정 섹션
-                    section_schema = await asyncio.to_thread(
-                        create_section_schema,
-                        "basic"
-                    )
-
-                if section_schema:
-                    logger.info(f"[BACKGROUND] Section schema created - sections={len(section_schema.get('sections', []))}")
-            else:
-                logger.info(f"[BACKGROUND] source_type not set, skipping section schema generation")
-
-        except Exception as schema_error:
-            logger.warning(
-                f"[BACKGROUND] Failed to create section schema - error={schema_error}",
-                exc_info=True
-            )
-            section_schema = None
+        section_schema = await _build_section_schema(topic_obj.source_type, topic_obj.template_id)
 
         # === Step 1: 진행 상태 업데이트 ===
         logger.info(f"[BACKGROUND] Preparing content - topic_id={topic_id}")
         await asyncio.to_thread(
             ArtifactDB.update_artifact_status,
             artifact_id=artifact_id,
-            status="generating",
+            status=ARTIFACT_STATUS_GENERATING,
             progress_percent=10
         )
 
@@ -1883,7 +1886,7 @@ async def _background_generate_report(
         await asyncio.to_thread(
             ArtifactDB.update_artifact_status,
             artifact_id=artifact_id,
-            status="generating",
+            status=ARTIFACT_STATUS_GENERATING,
             progress_percent=20
         )
 
@@ -1892,31 +1895,12 @@ async def _background_generate_report(
         # User prompt 구성
         user_prompt = f"주제: {topic}\n\n계획:\n{plan}\n\n위의 계획을 바탕으로 상세한 보고서를 작성해주세요."
 
-        optimized_system_prompt: Optional[str] = None
-
-        # 프롬프트 고도화 결과를 조회하여 Claude system prompt를 최적화
-        try:
-            latest_optimization = await asyncio.to_thread(
-                PromptOptimizationDB.get_latest_by_topic,
-                topic_id
-            )
-            optimization_response = _build_prompt_optimization_response(latest_optimization)
-
-            if optimization_response:
-                optimization_payload = map_optimized_to_claude_payload(
-                    optimization_response,
-                    user_prompt,
-                    PROMPT_OPTIMIZATION_DEFAULT_MODEL
-                )
-                optimized_system_prompt = optimization_payload.get("system")
-                logger.info("[BACKGROUND] Optimization result found - using optimized prompts")
-        except Exception as opt_exc:
-            logger.error(
-                "[BACKGROUND] Optimization lookup failed - topic_id=%s, error=%s",
-                topic_id,
-                str(opt_exc),
-                exc_info=True
-            )
+        optimized_system_prompt, _ = await _apply_prompt_optimization(
+            topic_id,
+            user_prompt
+        )
+        if optimized_system_prompt:
+            logger.info("[BACKGROUND] Optimization result found - using optimized prompts")
 
         if optimized_system_prompt:
             system_prompt = optimized_system_prompt
@@ -1932,6 +1916,7 @@ async def _background_generate_report(
 
         # JSON 모드와 일반 모드 구분
         json_converted = False  # ✅ 변수 초기화
+        json_response = None  # ✅ JSON 응답 변수 초기화
 
         if section_schema:
             # JSON 모드: StructuredClaudeClient 사용 (Structured Outputs)
@@ -1989,7 +1974,7 @@ async def _background_generate_report(
         await asyncio.to_thread(
             ArtifactDB.update_artifact_status,
             artifact_id=artifact_id,
-            status="generating",
+            status=ARTIFACT_STATUS_GENERATING,
             progress_percent=50
         )
 
@@ -2008,7 +1993,7 @@ async def _background_generate_report(
         await asyncio.to_thread(
             ArtifactDB.update_artifact_status,
             artifact_id=artifact_id,
-            status="generating",
+            status=ARTIFACT_STATUS_GENERATING,
             progress_percent=70
         )
 
@@ -2034,7 +2019,7 @@ async def _background_generate_report(
         await asyncio.to_thread(
             ArtifactDB.update_artifact_status,
             artifact_id=artifact_id,
-            status="generating",
+            status=ARTIFACT_STATUS_GENERATING,
             progress_percent=85
         )
 
@@ -2053,7 +2038,7 @@ async def _background_generate_report(
         await asyncio.to_thread(
             ArtifactDB.update_artifact_status,
             artifact_id=artifact_id,
-            status="completed",
+            status=ARTIFACT_STATUS_COMPLETED,
             progress_percent=100,
             message_id=assistant_msg.id,
             file_path=str(md_path),  # ✅ MD 파일 경로 저장
@@ -2061,6 +2046,58 @@ async def _background_generate_report(
             sha256=file_hash,
             completed_at=completed_at
         )
+
+        # === Step 6-1: JSON artifact 저장 (JSON 변환 응답인 경우) ===
+        if json_converted and json_response:
+            logger.info(f"[BACKGROUND] Saving JSON artifact from StructuredReportResponse - topic_id={topic_id}")
+
+            try:
+                # Step 1: JSON 직렬화
+                json_text = await asyncio.to_thread(
+                    json_response.model_dump_json
+                )
+                logger.info(f"[BACKGROUND] JSON serialized - length={len(json_text)}")
+
+                # Step 2: JSON 파일 경로 생성
+                json_filename = f"structured_{version}.json"
+                _, json_path = await asyncio.to_thread(
+                    build_artifact_paths,
+                    topic_id, version, json_filename
+                )
+                logger.info(f"[BACKGROUND] JSON artifact path - path={json_path}")
+
+                # Step 3: JSON 파일 저장
+                json_bytes_written = await asyncio.to_thread(write_text, json_path, json_text)
+                json_file_hash = await asyncio.to_thread(sha256_of, json_path)
+                logger.info(f"[BACKGROUND] JSON file written - size={json_bytes_written}, hash={json_file_hash[:16]}...")
+
+                # Step 4: JSON Artifact DB 레코드 생성
+                # 참고: message_id=None (백그라운드 생성이므로), version은 MD artifact와 동일
+                json_artifact = await asyncio.to_thread(
+                    ArtifactDB.create_artifact,
+                    topic_id,
+                    None,  # message_id=None (백그라운드 생성)
+                    ArtifactCreate(
+                        kind=ArtifactKind.JSON,
+                        locale=topic_obj.language,
+                        version=version,
+                        filename=json_path.name,
+                        file_path=str(json_path),
+                        file_size=json_bytes_written,
+                        sha256=json_file_hash,
+                        status=ARTIFACT_STATUS_COMPLETED,
+                        progress_percent=100,
+                        completed_at=datetime.utcnow().isoformat()
+                    )
+                )
+
+                logger.info(f"[BACKGROUND] JSON artifact created - artifact_id={json_artifact.id}, version={json_artifact.version}")
+
+            except Exception as json_e:
+                logger.error(f"[BACKGROUND] Failed to save JSON artifact - error={str(json_e)}")
+                # JSON artifact 실패는 비치명적 - 계속 진행 (MD artifact는 이미 생성됨)
+        else:
+            logger.info(f"[BACKGROUND] Skipping JSON artifact (json_converted={json_converted}, json_response={json_response is not None})")
 
         # AI 사용량 저장 (non-critical, 실패 무시)
         try:
@@ -2088,7 +2125,7 @@ async def _background_generate_report(
             await asyncio.to_thread(
                 ArtifactDB.update_artifact_status,
                 artifact_id=artifact_id,
-                status="failed",
+                status=ARTIFACT_STATUS_FAILED,
                 error_message=str(e),
                 completed_at=datetime.utcnow().isoformat()
             )
