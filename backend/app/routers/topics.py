@@ -558,14 +558,23 @@ async def ask(
         logger.warning(f"[ASK] Topic validation failed - topic_id={topic_id}")
         return error
 
-    if not topic.template_id:
-        logger.warning(f"[ASK] Template missing on topic - topic_id={topic_id}")
+    # === Step 2: 조건부 template_id 검증 (source_type 기반) ===
+    source_type_str = "basic"  # default
+    if topic.source_type:
+        source_type_str = topic.source_type.value if hasattr(topic.source_type, 'value') else str(topic.source_type)
+
+    logger.info(f"[ASK] source_type detected - source_type={source_type_str}")
+
+    if source_type_str == "template" and not topic.template_id:
+        logger.warning(f"[ASK] Template required for source_type=template but missing - topic_id={topic_id}")
         return error_response(
             code=ErrorCode.TEMPLATE_NOT_FOUND,
-            http_status=404,
+            http_status=400,
             message="이 토픽에는 템플릿이 지정되어 있지 않습니다.",
-            hint="계획을 먼저 생성 후 시도해 주세요."
+            hint="source_type='template'인 토픽에는 템플릿이 반드시 필요합니다."
         )
+
+    logger.info(f"[ASK] template_id validation passed - source_type={source_type_str}, template_id={topic.template_id}")
 
     content = (body.content or "").strip()
     if not content:
@@ -763,36 +772,21 @@ async def ask(
     if optimized_system_prompt:
         logger.info("[ASK] Optimization result found - using optimized prompts")
 
-    # === 5단계: System Prompt 선택 (우선순위: template > default) ===
-    if optimized_system_prompt is not None:
-        system_prompt = optimized_system_prompt
-    else:
-        logger.info("[ASK] No optimization result - using default system prompt")
-        logger.info(f"[ASK] Selecting system prompt - template_id={topic.template_id}")
+    # === 5단계: System Prompt 필수 검증 ===
+    # ❌ template_id 기반 조회 제거, optimized_system_prompt도 무시
+    # ✅ topic.prompt_system 필수 사용
+    system_prompt = topic.prompt_system
 
-        try:
-            system_prompt = await asyncio.to_thread(
-                get_system_prompt,
-                custom_prompt=None,
-                template_id=topic.template_id,
-                user_id=current_user.id
-            )
-        except InvalidTemplateError as e:
-            logger.warning(f"[ASK] Template error - code={e.code}, message={e.message}")
-            return error_response(
-                code=e.code,
-                http_status=e.http_status,
-                message=e.message,
-                hint=e.hint
-            )
-        except ValueError as e:
-            logger.error(f"[ASK] Invalid arguments - error={str(e)}")
-            return error_response(
-                code=ErrorCode.SERVER_INTERNAL_ERROR,
-                http_status=500,
-                message="시스템 오류가 발생했습니다.",
-                details={"error": str(e)}
-            )
+    if not system_prompt:
+        logger.error(f"[ASK] prompt_system not found (required field) - topic_id={topic_id}, source_type={source_type_str}")
+        return error_response(
+            code=ErrorCode.VALIDATION_REQUIRED_FIELD,
+            http_status=400,
+            message="이 토픽의 프롬프트가 설정되어 있지 않습니다.",
+            hint="POST /api/topics/plan으로 계획을 먼저 생성해주세요."
+        )
+
+    logger.info(f"[ASK] Using prompt_system from topic - source_type={source_type_str}, length={len(system_prompt)}")
 
     # === 5.5단계: JSON 섹션 스키마 생성 (새로운 단계) ===
     section_schema = await _build_section_schema(topic.source_type, topic.template_id)
