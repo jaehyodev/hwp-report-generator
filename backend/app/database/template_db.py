@@ -625,10 +625,26 @@ class PlaceholderDB:
         if not row:
             return None
 
+        # Use column names instead of positional indexes to avoid schema ordering issues
+        # (e.g., legacy DBs where `created_at` precedes `sort`).
+        sort_val = row["sort"] if hasattr(row, "keys") else row[3] if len(row) > 3 else 0
+        created_at_val = row["created_at"] if hasattr(row, "keys") else row[4] if len(row) > 4 else None
+
+        # Normalize created_at to datetime
+        if isinstance(created_at_val, datetime):
+            created_at_dt = created_at_val
+        elif isinstance(created_at_val, str):
+            try:
+                created_at_dt = datetime.fromisoformat(created_at_val)
+            except ValueError:
+                created_at_dt = datetime.now()
+        else:
+            created_at_dt = datetime.now()
+
         return Placeholder(
             id=row[0],
             template_id=row[1],
             placeholder_key=row[2],
-            sort=row[3] if len(row) > 3 and row[3] is not None else 0,
-            created_at=datetime.fromisoformat(row[4]) if len(row) > 4 else datetime.now()
+            sort=sort_val if sort_val is not None else 0,
+            created_at=created_at_dt
         )
