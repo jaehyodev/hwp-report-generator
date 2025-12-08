@@ -50,7 +50,6 @@ from app.utils.markdown_parser import parse_markdown_to_content
 from app.database import init_db, UserDB
 from app.routers import (
     auth_router,
-    reports_router,
     admin_router,
     topics_router,
     messages_router,
@@ -122,7 +121,6 @@ templates = Jinja2Templates(directory=str(PROJECT_ROOT / "templates"))
 
 # 라우터 등록
 app.include_router(auth_router)
-app.include_router(reports_router)  # Legacy (deprecated)
 app.include_router(admin_router)
 
 # New chat-based API routers

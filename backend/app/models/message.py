@@ -101,11 +101,6 @@ class AskRequest(BaseModel):
         description="Artifact ID to reference (null = use latest MD)"
     )
 
-    include_artifact_content: bool = Field(
-        default=False,
-        description="Include artifact file content in context"
-    )
-
     max_messages: Optional[int] = Field(
         default=None,
         ge=1,

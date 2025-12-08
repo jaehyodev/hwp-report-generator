@@ -1010,7 +1010,7 @@ async def ask(
             http_status=400,
             message="컨텍스트 크기가 너무 큽니다.",
             details={"total_chars": total_chars, "max_chars": MAX_CONTEXT_CHARS},
-            hint="max_messages를 줄이거나 include_artifact_content를 false로 설정해주세요."
+            hint="max_messages를 줄여서 다시 시도해주세요."
         )
 
     # === 5단계: System Prompt 합성 (TopicDB 기반) ===
