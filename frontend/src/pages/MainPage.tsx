@@ -1,4 +1,4 @@
-import {useState, useRef, useEffect} from 'react'
+import {useState, useRef, useEffect, useLayoutEffect} from 'react'
 import {MenuOutlined} from '@ant-design/icons'
 import {useMessage} from '../contexts/MessageContext'
 import {TOAST_MESSAGES} from '../constants'
@@ -159,9 +159,18 @@ const MainPage = () => {
         }
     }, [])
 
+    // 이전에 선택된 topic id
+    const prevTopicIdRef = useRef<number | null>(selectedTopicId)
     // 선택된 주제가 변경되면 메시지 자동 조회
     useEffect(() => {
-        if (selectedTopicId !== null && selectedTopicId > 0) {
+        const prevTopicId = prevTopicIdRef.current
+        prevTopicIdRef.current = selectedTopicId
+
+        // prevTopicId가 0이고 selectedTopicId가 새로운 ID일 경우 (계획 -> 토픽 전환)
+        // 메시지 마이그레이션 직후이므로 서버에서 로드하지 않음
+        const justMigrated = prevTopicId === 0 && selectedTopicId !== null && selectedTopicId > 0
+
+        if (selectedTopicId !== null && selectedTopicId > 0 && !justMigrated) {
             const messageStore = useMessageStore.getState()
             const storedMessages = messageStore.getMessages(selectedTopicId)
 
@@ -241,15 +250,12 @@ const MainPage = () => {
     }, [isReportsDropdownOpen])
 
     // 메시지가 3개 이상일 때 마지막 메시지를 화면에 보이도록 스크롤
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (messages.length > 2 && lastMessageRef.current) {
-            const lastMessage = messages[messages.length - 1]
-            setTimeout(() => {
-                lastMessageRef.current?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'start'
-                })
-            }, 100)
+            lastMessageRef.current?.scrollIntoView({
+                behavior: 'auto',
+                block: 'start'
+            })
         }
     }, [messages])
 

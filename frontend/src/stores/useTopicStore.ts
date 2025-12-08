@@ -606,7 +606,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 // antdMessage.destroy(`generating-${realTopicId}`)
                                 // antdMessage.success('보고서가 생성되었습니다.')
 
-                                // 메시지 처리
+                                // 토픽id 0의 메시지
                                 const planMessages = messageStore.getMessages(0)
                                 // 서버에 있는 메시지 목록 요청
                                 const messagesResponse = await messageApi.listMessages(realTopicId)
@@ -616,16 +616,20 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
                                 // 메시지 목록과 아티팩트 목록 결합
                                 const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
-                                
+                                // 토픽id 0의 메시지를 실제 서버 토픽id로 변경
                                 const updatedPlanMessages = planMessages.map((msg) => ({
                                     ...msg,
                                     topicId: realTopicId
                                 }))
+                                
+                                // 토픽id 0이었던 메시지들의 id를 set구조로 변환
                                 const planMessageIds = new Set(updatedPlanMessages.filter((m) => m.id).map((m) => m.id))
+                                // 서버에서 받은 메시지를 토픽id 0이었던 메시지와 겹치치 않게 필터
                                 const newServerMessages = serverMessages.filter((m: MessageModel) => {
                                     if (!m.id) return true
                                     return !planMessageIds.has(m.id)
                                 })
+                                // 서버에서 가져온 메시지와 합침
                                 const mergedMessages = [...updatedPlanMessages, ...newServerMessages]
                                 messageStore.setMessages(realTopicId, mergedMessages)
                                 messageStore.clearMessages(0)
