@@ -133,6 +133,19 @@ class UserDB:
         return affected > 0
 
     @staticmethod
+    def update_user_password(user_id: int, hashed_password: str) -> bool:
+        """사용자 비밀번호 업데이트 (v2.11+ 관리자 비밀번호 동기화용)
+
+        Args:
+            user_id: 사용자 ID
+            hashed_password: 해시된 비밀번호
+
+        Returns:
+            bool: 성공 여부
+        """
+        return UserDB.update_password(user_id, hashed_password)
+
+    @staticmethod
     def delete_user(user_id: int) -> bool:
         """사용자 삭제"""
         conn = get_db_connection()
