@@ -31,7 +31,7 @@ import styles from './TemplateManagementPage.module.css'
  * - TemplateDetailModal: 상세 모달
  */
 
-const TemplateManagementPage: React.FC = () => {
+const TemplateManagementPage = () => {
     const navigate = useNavigate()
     const {setSelectedTopicId} = useTopicStore()
 

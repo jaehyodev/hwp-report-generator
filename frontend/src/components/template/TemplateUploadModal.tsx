@@ -22,11 +22,16 @@ import styles from './TemplateUploadModal.module.css'
  * - 필수 입력: 파일, 제목
  */
 
+interface TemplateResult {
+    ok: boolean
+    error?: string
+}
+
 interface TemplateUploadModalProps {
     open: boolean
     onClose: () => void
     uploading: boolean
-    onUpload: (file: File, title: string) => Promise<boolean>
+    onUpload: (file: File, title: string) => Promise<TemplateResult>
 }
 
 const TemplateUploadModal = ({open, onClose, uploading, onUpload}: TemplateUploadModalProps) => {
@@ -86,16 +91,17 @@ const TemplateUploadModal = ({open, onClose, uploading, onUpload}: TemplateUploa
             }
 
             const file = uploadFile.originFileObj as File
-            const success = await onUpload(file, values.title)
+            const result = await onUpload(file, values.title)
 
-            if (success) {
-                handleClose()
+            if (result.ok) {
+                antdMessage.success(TOAST_MESSAGES.TEMPLATE_UPLOAD_SUCCESS)    
+            } else {
+                antdMessage.error(TOAST_MESSAGES.TEMPLATE_UPLOAD_FAILED)
             }
         } catch (error: any) {
-            if (error.errorFields) {
-                // Form validation error
-                return
-            }
+            antdMessage.error(TOAST_MESSAGES.TEMPLATE_UPLOAD_FAILED)
+        } finally {
+            handleClose()
         }
     }
 
