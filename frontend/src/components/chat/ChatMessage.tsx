@@ -53,6 +53,7 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
     // 보고서 다운로드
     const handleDownload = async() => {
         try {
+            console.log('dssss')
             // 다운로드할 보고서 데이터
             const reportData = {
                 filename: message.reportData!.filename,
@@ -152,7 +153,7 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
                                     className={styles.reportDownloadBtn}
                                     onClick={(e) => {
                                         e.stopPropagation()
-                                        handleDownload
+                                        handleDownload()
                                     }}
                                     title="HWPX 다운로드">
                                     <DownloadOutlined />

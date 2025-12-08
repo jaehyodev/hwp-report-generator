@@ -274,8 +274,12 @@ export const topicApi = {
         const controller = new AbortController()
 
         // EventSource 생성
-        fetchEventSource(`${API_BASE_URL}${API_ENDPOINTS.GET_GENERATION_STATUS_STREAM}`, {
+        fetchEventSource(`${API_BASE_URL}${API_ENDPOINTS.GET_GENERATION_STATUS_STREAM(topicId)}`, {
             method: 'GET',
+            // axios가 아니라 token을 따로 붙여야함.
+            headers: {
+                Authorization: `Bearer ${token}`,
+            },
             signal: controller.signal, // AbortController signal 추가
             openWhenHidden: true, // 탭이 숨겨져도 연결 유지 (재연결 방지)
             onmessage: (event) => {
