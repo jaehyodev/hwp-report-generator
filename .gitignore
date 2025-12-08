@@ -52,6 +52,7 @@ venv.bak/
 output/
 temp/
 *.hwpx
+!backend/templates/templateRef/Template_Hwpx.hwpx
 *.hwp
 *.tmp
 *.log
