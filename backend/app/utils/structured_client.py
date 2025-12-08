@@ -91,30 +91,6 @@ class StructuredClaudeClient:
         json_schema = self._build_json_schema(section_schema, source_type)
         logger.info(f"[STRUCTURED_REPORT] JSON Schema 생성 완료")
 
-        # 2025.12.02  User message는 topics.py 에서 미리 생성
-        # # 참고용 MD 메시지 추출
-        # assitant_md = [
-        #     msg.get("content")
-        #     for msg in (context_messages or [])
-        #     if msg.get("role") == "assistant" and msg.get("content") is not None
-        # ]
-
-        # # User message 구성
-        # user_message = self._build_user_message(topic, section_schema)
-
-        # # 메시지 구성
-        # messages = []
-
-        # # 컨텍스트 메시지가 있으면 추가 (대화형 모드)
-        # if context_messages:
-        #     messages.extend(context_messages)
-
-        # # 현재 사용자 메시지 추가
-        # messages.append({
-        #     "role": "user",
-        #     "content": user_message
-        # })
-
         # Structured Outputs로 Claude API 호출
         response_json = self._invoke_with_structured_output(
             system_prompt=system_prompt,
@@ -345,38 +321,6 @@ class StructuredClaudeClient:
         except Exception as e:
             logger.error(f"[INVOKE_STRUCTURED] Claude API 호출 중 오류 발생: {str(e)}")
             raise Exception(f"Claude API Structured Outputs 호출 실패: {str(e)}")
-
-    def _build_user_message_topic(self, topic: str, section_schema: dict) -> str:
-        """Claude에 전달할 User Message 빌드
-
-        Args:
-            topic: 보고서 주제
-            section_schema: 섹션 스키마
-
-        Returns:
-            User message 문자열
-        """
-        sections_info = json.dumps(section_schema, ensure_ascii=False, indent=2)
-
-        message = f"""당신은 구조화된 JSON 형식으로 보고서 섹션을 생성하는 전문가입니다.
-
-## 보고서 주제
-{topic}
-
-## 필수 섹션 메타정보
-
-아래 섹션 정의를 따라 JSON 형식으로 보고서를 작성하세요:
-
-{sections_info}
-
-## 중요 지침
-1. **반드시 JSON만 출력하세요** - 설명이나 주석 금지
-3. **order 필드 정확성** - 섹션 순서를 order에 명시하세요
-5. **모든 필수 섹션을 포함하세요** - 누락된 섹션이 없도록 확인
-
-이제 위의 섹션 정의에 맞춰 JSON 형식의 보고서를 생성하세요."""
-
-        return message
     
     def _build_user_message_content(self, content: str, section_schema: dict, assitant_md: str) -> str:
         """Claude에 전달할 User Message 빌드

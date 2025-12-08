@@ -50,7 +50,6 @@ from app.utils.markdown_parser import parse_markdown_to_content
 from app.database import init_db, UserDB
 from app.routers import (
     auth_router,
-    reports_router,
     admin_router,
     topics_router,
     messages_router,
@@ -100,6 +99,10 @@ async def startup_event():
 
 # CORS 설정 - 환경별 프론트엔드 주소 지정
 FRONTEND_URLS = os.getenv("FRONTEND_URLS", "http://localhost:5173").split(",")
+# 공백 제거 및 URL 정규화
+FRONTEND_URLS = [url.strip() for url in FRONTEND_URLS]
+print(f"DEBUG: CORS FRONTEND_URLS = {FRONTEND_URLS}")
+logger.info(f"DEBUG: CORS FRONTEND_URLS = {FRONTEND_URLS}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -118,7 +121,6 @@ templates = Jinja2Templates(directory=str(PROJECT_ROOT / "templates"))
 
 # 라우터 등록
 app.include_router(auth_router)
-app.include_router(reports_router)  # Legacy (deprecated)
 app.include_router(admin_router)
 
 # New chat-based API routers
@@ -385,19 +387,8 @@ async def list_reports():
 
 
 def init_admin_user():
-    """관리자 계정 자동 생성 및 비밀번호 동기화 (v2.11+)
-
-    동작:
-    1. .env에서 ADMIN_EMAIL, ADMIN_PASSWORD 읽기
-    2. 관리자 계정 존재 여부 확인
-       - 없음: 새로운 관리자 계정 생성
-       - 있음: 비밀번호 검증
-         - 같음: "이미 존재합니다" 로그
-         - 다름: DB의 비밀번호 업데이트
-    """
+    """관리자 계정 자동 생성"""
     try:
-        from app.utils.auth import verify_password
-
         admin_email = os.getenv("ADMIN_EMAIL", "admin@example.com")
         admin_password = os.getenv("ADMIN_PASSWORD", "admin123!@#")
         admin_username = os.getenv("ADMIN_USERNAME", "관리자")
@@ -405,15 +396,7 @@ def init_admin_user():
         # 관리자 계정이 이미 있는지 확인
         existing_admin = UserDB.get_user_by_email(admin_email)
         if existing_admin:
-            # ✅ 새로운 해시 생성
-            new_hash = hash_password(admin_password)
-
-            # ✅ 기존 해시와 비교: 다르면 업데이트
-            if not verify_password(admin_password, existing_admin.hashed_password):
-                UserDB.update_user_password(existing_admin.id, new_hash)
-                logger.info(f"관리자 비밀번호가 업데이트되었습니다. email: {admin_email}")
-            else:
-                logger.info("관리자 계정이 이미 존재합니다.")
+            logger.info("관리자 계정이 이미 존재합니다.")
             return
 
         # 관리자 계정 생성
@@ -434,7 +417,7 @@ def init_admin_user():
         logger.info(f"관리자 계정이 생성되었습니다. 이메일: {admin_email}")
 
     except Exception as e:
-        logger.error(f"관리자 계정 초기화 중 오류: {str(e)}")
+        logger.error(f"관리자 계정 생성 중 오류: {str(e)}")
 
 
 if __name__ == "__main__":

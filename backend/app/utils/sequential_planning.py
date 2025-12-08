@@ -11,7 +11,7 @@ import time
 from typing import Dict, Optional, Any, List
 
 from app.utils.claude_client import ClaudeClient
-from app.utils.prompts import get_base_plan_prompt, get_advanced_planner_prompt, get_for_plan_source_type_basic_prompt_system, get_for_plan_source_type_basic_prompt_user
+from app.utils.prompts import get_base_plan_prompt, get_advanced_planner_prompt, get_base_report_prompt, get_for_plan_source_type_basic_prompt_system, get_for_plan_source_type_basic_prompt_user
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +127,7 @@ async def _two_step_planning(
 
     logger.info("Sequential Planning (two-step) started - using Advanced Role Planner")
 
+    # 1단계: Advanced Role Planner 호출
     advanced_prompt = get_advanced_planner_prompt().replace("{{USER_TOPIC}}", topic)
     first_response = await _call_sequential_planning(
         advanced_prompt,
@@ -141,11 +142,14 @@ async def _two_step_planning(
         list(first_response_json.keys())
     )
 
+    # Advanced Role Planner 응답에서 필드 추출
     prompt_fields = _extract_prompt_fields(first_response_json)
+
+    # 최적화된 프롬프트 구성
     optimized_prompt_system = _build_prompt_system_from_fields(
         role=prompt_fields["role"],
         context=prompt_fields["context"],
-        output_format=prompt_fields["output_format"],
+        output_format=prompt_fields["output_format"], 
     )
     
     optimized_prompt_user = _build_optimized_prompt(
@@ -156,6 +160,7 @@ async def _two_step_planning(
     input_prompt_system = get_for_plan_source_type_basic_prompt_system()
     input_prompt_user = get_for_plan_source_type_basic_prompt_user().replace("{{OPTIMIZED_PROMPT_JSON}}", optimized_prompt_user)
 
+    # 2단계: 최적화된 프롬프트로 계획 생성
     second_response = await _call_sequential_planning(
         input_prompt_user,
         is_web_search=is_web_search,
@@ -581,16 +586,10 @@ def _build_prompt_system_from_fields(role: str, context: str, output_format: str
 
     return f"""{role_text}
 
-# 맥락 
+## 맥락 
 {context_text}
 
----
-
-## output_format
-{output_format}
-
 > 모든 대답은 자연스러운 한국어로 작성되어야 합니다.
-
 """
 
 def _build_optimized_prompt(prompt_user: str, task: str) -> str:

@@ -33,6 +33,7 @@ from app.utils.templates_manager import TemplatesManager
 from app.utils.prompts import (
     create_template_specific_rules,
     get_base_report_prompt,
+    get_prompt_user_default,
 )
 from app.utils.meta_info_generator import generate_placeholder_metadata
 
@@ -248,7 +249,7 @@ async def upload_template(
                     metadata = generate_placeholder_metadata(placeholder_list)
 
                 # [개선] 10단계: BASE/규칙 분리 저장
-                base_prompt = get_base_report_prompt()
+                base_prompt = get_prompt_user_default()
                 metadata_dicts = [
                     {**p.model_dump(), "key": p.placeholder_key}
                     for p in metadata.placeholders

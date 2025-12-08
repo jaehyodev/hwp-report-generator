@@ -226,20 +226,22 @@ class GenerateRequest(BaseModel):
 
 
 class GenerateResponse(BaseModel):
-    """POST /api/topics/generate 응답 모델 (202 Accepted)
+    """POST /api/topics/generate 또는 /ask 응답 모델 (202 Accepted)
 
-    보고서 생성이 백그라운드 task로 시작되었음을 알립니다.
+    보고서 생성 또는 질문 응답이 백그라운드 task로 시작되었음을 알립니다.
 
     Attributes:
         topic_id: 토픽 ID
-        status: 생성 상태 ("generating")
+        status: 생성 상태 ("generating" 또는 "answering")
         message: 상태 메시지
-        status_check_url: 진행 상황 확인 URL
+        status_check_url: 진행 상황 확인 URL (/api/topics/{topic_id}/status)
+        stream_url: SSE 스트림 URL (/api/topics/{topic_id}/status/stream)
     """
     topic_id: int
-    status: str  # "generating"
+    status: str  # "generating" 또는 "answering"
     message: str
     status_check_url: str
+    stream_url: str
 
 
 class StatusResponse(BaseModel):
