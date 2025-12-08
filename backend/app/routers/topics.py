@@ -1247,7 +1247,15 @@ async def generate_report_background(
         # ✅ NEW: Artifact 즉시 생성 (status="scheduled", file_path=NULL)
         # ✅ CHANGED: kind를 HWPX에서 MD로 변경 (더 빠른 생성)
         logger.info(f"[GENERATE] Creating artifact - topic_id={topic_id}")
-        
+
+        # ✅ MD 버전을 동적으로 생성 (JSON과 동일하게)
+        md_version = await asyncio.to_thread(
+            next_artifact_version,
+            topic_id,
+            ArtifactKind.MD,
+            "ko"
+        )
+
         artifact = await asyncio.to_thread(
             ArtifactDB.create_artifact,
             topic_id,
@@ -1255,7 +1263,7 @@ async def generate_report_background(
             ArtifactCreate(
                 kind=ArtifactKind.MD,  # ✅ MD 파일로 즉시 생성
                 locale="ko",
-                version=1,
+                version=md_version,  # ✅ 동적 버전
                 filename="report.md",  # ✅ MD 파일명
                 file_path=None,  # ✅ NULL during work
                 file_size=0,
@@ -2119,8 +2127,21 @@ def _build_user_message_topic(topic: str, plan: str ,section_schema: dict) -> st
 
 ## 중요 지침
 1. **반드시 JSON만 출력하세요** - 설명이나 주석 금지
+
+2. **content 필드 작성 규칙 (필수)**
+   - content 필드에는 순수 텍스트만 포함하세요
+   - Markdown 형식(#, ##, -, 1. 등)을 content에 포함하지 마세요
+   - 예시:
+     ❌ "content": "# 2025 글로벌 AI 시장 분석 보고서"
+     ✅ "content": "2025 글로벌 AI 시장 분석 보고서"
+     
+   - 예시:
+     ❌ "content": "## 2. 시장 배경 분석"
+     ✅ "content": "시장 배경 분석"
+
 3. **order 필드 정확성** - 섹션 순서를 order에 명시하세요
-5. **모든 필수 섹션을 포함하세요** - 누락된 섹션이 없도록 확인
+
+4. **모든 필수 섹션을 포함하세요** - 누락된 섹션이 없도록 확인
 
 이제 위의 섹션 정의에 맞춰 JSON 형식의 보고서를 생성하세요."""
 
