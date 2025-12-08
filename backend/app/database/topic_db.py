@@ -7,7 +7,7 @@ from typing import Optional, List, Tuple
 from datetime import datetime
 from .connection import get_db_connection
 from app.models.topic import Topic, TopicCreate, TopicUpdate
-from shared.types.enums import TopicStatus
+from shared.types.enums import TopicStatus, TopicSourceType
 
 
 class TopicDB:
@@ -36,11 +36,21 @@ class TopicDB:
         now = datetime.now()
         cursor.execute(
             """
-            INSERT INTO topics (user_id, input_prompt, language, status, template_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO topics (user_id, input_prompt, language, status, template_id, prompt_user, prompt_system, source_type, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (user_id, topic_data.input_prompt, topic_data.language,
-             TopicStatus.ACTIVE.value, topic_data.template_id, now, now)
+            (
+                user_id,
+                topic_data.input_prompt,
+                topic_data.language,
+                TopicStatus.ACTIVE.value,
+                topic_data.template_id,
+                topic_data.prompt_user,
+                topic_data.prompt_system,
+                topic_data.source_type.value,
+                now,
+                now
+            )
         )
 
         conn.commit()
@@ -171,6 +181,26 @@ class TopicDB:
         return TopicDB._row_to_topic(row) if row else None
 
     @staticmethod
+    def update_topic_prompts(topic_id: int, prompt_user: Optional[str], prompt_system: Optional[str]) -> bool:
+        """Updates prompt fields for a topic."""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            UPDATE topics
+            SET prompt_user = ?, prompt_system = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (prompt_user, prompt_system, datetime.now(), topic_id)
+        )
+        conn.commit()
+        updated = cursor.rowcount > 0
+        conn.close()
+
+        return updated
+
+    @staticmethod
     def delete_topic(topic_id: int) -> bool:
         """Deletes a topic (hard delete, cascades to messages/artifacts).
 
@@ -201,6 +231,16 @@ class TopicDB:
         Returns:
             Topic entity
         """
+        try:
+            prompt_user = row["prompt_user"]
+        except IndexError:
+            prompt_user = None
+
+        try:
+            prompt_system = row["prompt_system"]
+        except IndexError:
+            prompt_system = None
+
         return Topic(
             id=row["id"],
             user_id=row["user_id"],
@@ -209,6 +249,9 @@ class TopicDB:
             language=row["language"],
             status=TopicStatus(row["status"]),
             template_id=row["template_id"],
+            prompt_user=prompt_user,
+            prompt_system=prompt_system,
+            source_type=TopicSourceType(row["source_type"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"])
         )

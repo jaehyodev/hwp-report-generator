@@ -155,11 +155,11 @@ class TemplateDB:
 
             # Step 3: Placeholders 배치 INSERT
             if placeholder_keys:
-                data = [(template_id, key, now) for key in placeholder_keys]
+                data = [(template_id, key, sort_idx, now) for sort_idx, key in enumerate(placeholder_keys)]
                 cursor.executemany(
                     """
-                    INSERT INTO placeholders (template_id, placeholder_key, created_at)
-                    VALUES (?, ?, ?)
+                    INSERT INTO placeholders (template_id, placeholder_key, sort, created_at)
+                    VALUES (?, ?, ?, ?)
                     """,
                     data
                 )
@@ -528,21 +528,21 @@ class PlaceholderDB:
 
         now = datetime.now()
         try:
-            # Prepare data for batch insert
-            data = [(template_id, key, now) for key in placeholder_keys]
+            # Prepare data for batch insert with sort index
+            data = [(template_id, key, sort_idx, now) for sort_idx, key in enumerate(placeholder_keys)]
 
             cursor.executemany(
                 """
-                INSERT INTO placeholders (template_id, placeholder_key, created_at)
-                VALUES (?, ?, ?)
+                INSERT INTO placeholders (template_id, placeholder_key, sort, created_at)
+                VALUES (?, ?, ?, ?)
                 """,
                 data
             )
             conn.commit()
 
-            # Retrieve all created placeholders
+            # Retrieve all created placeholders ordered by sort
             cursor.execute(
-                "SELECT * FROM placeholders WHERE template_id = ? ORDER BY created_at ASC",
+                "SELECT * FROM placeholders WHERE template_id = ? ORDER BY sort ASC",
                 (template_id,)
             )
             rows = cursor.fetchall()
@@ -562,7 +562,7 @@ class PlaceholderDB:
             template_id: Template ID
 
         Returns:
-            List of placeholder entities
+            List of placeholder entities ordered by sort
 
         Examples:
             >>> placeholders = PlaceholderDB.get_placeholders_by_template(1)
@@ -575,7 +575,7 @@ class PlaceholderDB:
         cursor = conn.cursor()
 
         cursor.execute(
-            "SELECT * FROM placeholders WHERE template_id = ? ORDER BY created_at ASC",
+            "SELECT * FROM placeholders WHERE template_id = ? ORDER BY sort ASC",
             (template_id,)
         )
         rows = cursor.fetchall()
@@ -617,7 +617,7 @@ class PlaceholderDB:
         """Converts database row to Placeholder entity.
 
         Args:
-            row: Database row tuple
+            row: Database row tuple (id, template_id, placeholder_key, sort, created_at)
 
         Returns:
             Placeholder entity or None if row is None
@@ -625,9 +625,26 @@ class PlaceholderDB:
         if not row:
             return None
 
+        # Use column names instead of positional indexes to avoid schema ordering issues
+        # (e.g., legacy DBs where `created_at` precedes `sort`).
+        sort_val = row["sort"] if hasattr(row, "keys") else row[3] if len(row) > 3 else 0
+        created_at_val = row["created_at"] if hasattr(row, "keys") else row[4] if len(row) > 4 else None
+
+        # Normalize created_at to datetime
+        if isinstance(created_at_val, datetime):
+            created_at_dt = created_at_val
+        elif isinstance(created_at_val, str):
+            try:
+                created_at_dt = datetime.fromisoformat(created_at_val)
+            except ValueError:
+                created_at_dt = datetime.now()
+        else:
+            created_at_dt = datetime.now()
+
         return Placeholder(
             id=row[0],
             template_id=row[1],
             placeholder_key=row[2],
-            created_at=datetime.fromisoformat(row[3])
+            sort=sort_val if sort_val is not None else 0,
+            created_at=created_at_dt
         )

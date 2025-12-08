@@ -406,6 +406,30 @@ class ArtifactDB:
         return ArtifactDB._row_to_artifact(row)
 
     @staticmethod
+    def mark_failed(artifact_id: int, error_message: str) -> Artifact:
+        """Marks an artifact as failed with error message (Task callback helper).
+
+        This method is used by Task callbacks to quickly mark artifacts as failed
+        without blocking the event loop. It performs a minimal DB update.
+
+        Args:
+            artifact_id: Artifact ID to mark as failed
+            error_message: Error message (max 500 chars)
+
+        Returns:
+            Updated artifact entity
+
+        Examples:
+            >>> artifact = ArtifactDB.mark_failed(1, "Connection timeout")
+        """
+        return ArtifactDB.update_artifact_status(
+            artifact_id=artifact_id,
+            status="failed",
+            error_message=error_message,
+            completed_at=datetime.now().isoformat()
+        )
+
+    @staticmethod
     def _row_to_artifact(row) -> Artifact:
         """Converts database row to Artifact model.
 

@@ -10,7 +10,8 @@
       "python": "${workspaceFolder}/backend/.venv/bin/python",
       "jinja": true,
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/backend"
+        "PYTHONPATH": "${workspaceFolder}/backend",
+        "LOG_LEVEL": "DEBUG"
       },
     }
   ]

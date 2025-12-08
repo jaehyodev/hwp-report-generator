@@ -6,7 +6,7 @@ A topic represents a conversation thread about a specific report subject.
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
-from shared.types.enums import TopicStatus
+from shared.types.enums import TopicStatus, TopicSourceType
 
 
 class TopicCreate(BaseModel):
@@ -16,10 +16,16 @@ class TopicCreate(BaseModel):
         input_prompt: User's original input describing the report subject
         language: Primary language for the report (default: 'ko')
         template_id: Optional template ID to use for dynamic system prompt generation
+        prompt_user: Optional first step API response converted to markdown (from sequential_planning)
+        prompt_system: Optional markdown rules for planning (from sequential_planning)
+        source_type: Source type of the topic (template or basic) - REQUIRED
     """
     input_prompt: str = Field(..., min_length=1, max_length=1000, description="Report topic input")
     language: str = Field(default="ko", description="Primary language (ko/en)")
     template_id: Optional[int] = Field(default=None, description="Template ID for dynamic system prompt generation")
+    prompt_user: Optional[str] = Field(default=None, description="First step API response converted to markdown (sequential_planning)")
+    prompt_system: Optional[str] = Field(default=None, description="Markdown rules for planning (sequential_planning)")
+    source_type: TopicSourceType = Field(..., description="Source type (template or basic)")
 
 
 class TopicUpdate(BaseModel):
@@ -44,6 +50,9 @@ class Topic(BaseModel):
         language: Primary language code
         status: Current topic status
         template_id: Optional template ID used for this topic
+        prompt_user: Optional first step API response converted to markdown (from sequential_planning)
+        prompt_system: Optional markdown rules for planning (from sequential_planning)
+        source_type: Source type (template or basic) - IMMUTABLE
         created_at: Creation timestamp
         updated_at: Last update timestamp
     """
@@ -54,6 +63,9 @@ class Topic(BaseModel):
     language: str = "ko"
     status: TopicStatus = TopicStatus.ACTIVE
     template_id: Optional[int] = None
+    prompt_user: Optional[str] = None
+    prompt_system: Optional[str] = None
+    source_type: TopicSourceType = TopicSourceType.BASIC
     created_at: datetime
     updated_at: datetime
 
@@ -129,6 +141,8 @@ class PlanRequest(BaseModel):
     Attributes:
         topic: 보고서 주제 (필수, 최대 200자)
         template_id: 사용할 템플릿 ID (선택, None이면 default template 사용)
+        is_web_search: 웹 검색 도구 사용 여부 (기본값: false)
+        is_template_used: 템플릿 사용 여부 (기본값: true, false이면 template_id 무시)
     """
     topic: str = Field(..., min_length=1, max_length=200, description="보고서 주제")
     template_id: Optional[int] = Field(None, description="템플릿 ID (선택)")
@@ -137,6 +151,11 @@ class PlanRequest(BaseModel):
         alias="isWebSearch",
         description="웹 검색 도구 사용 여부 (기본값: false)"
     )
+    is_template_used: bool = Field(
+        default=True,
+        alias="isTemplateUsed",
+        description="템플릿 사용 여부 (기본값: true, false이면 template_id 무시)"
+    )
 
     class Config:
         populate_by_name = True
@@ -144,7 +163,8 @@ class PlanRequest(BaseModel):
             "example": {
                 "topic": "AI 시장 분석",
                 "template_id": 1,
-                "isWebSearch": True
+                "isWebSearch": True,
+                "isTemplateUsed": True
             }
         }
 

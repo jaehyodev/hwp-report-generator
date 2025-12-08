@@ -10,11 +10,11 @@ from app.database.artifact_db import ArtifactDB
 from app.models.topic import TopicCreate
 from app.models.message import MessageCreate
 from app.models.artifact import ArtifactCreate
-from shared.types.enums import MessageRole, ArtifactKind
+from shared.types.enums import MessageRole, ArtifactKind, TopicSourceType
 
 
 def _create_topic_message(user_id):
-    topic = TopicDB.create_topic(user_id=user_id, topic_data=TopicCreate(input_prompt="Artifact Topic", language="ko"))
+    topic = TopicDB.create_topic(user_id=user_id, topic_data=TopicCreate(input_prompt="Artifact Topic", language="ko", source_type=TopicSourceType.BASIC))
     msg = MessageDB.create_message(topic.id, MessageCreate(role=MessageRole.USER, content="생성 메시지"))
     return topic, msg
 

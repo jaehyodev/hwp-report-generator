@@ -213,7 +213,9 @@ async def upload_template(
             try:
                 # 6. 플레이스홀더 추출
                 placeholders = manager.extract_placeholders(work_dir)
-                placeholder_list = sorted(placeholders)
+                # TODO: 정렬 필요 여부 검토 필요.
+                # placeholder_list = sorted(placeholders)
+                placeholder_list = placeholders
 
                 # 7. 플레이스홀더 중복 검증
                 if manager.has_duplicate_placeholders(placeholder_list):

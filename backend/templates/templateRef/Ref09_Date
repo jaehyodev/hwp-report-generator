@@ -1,0 +1,8 @@
+<hp:p id="2147483648" paraPrIDRef="19" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">
+  <hp:run charPrIDRef="13">
+    <hp:t>작성일: <!-- Date_Start -->{{ DATE }}<!-- Date_End --></hp:t>
+  </hp:run>
+  <hp:linesegarray>
+    <hp:lineseg textpos="0" vertpos="5553" vertsize="1300" textheight="1300" baseline="1105" spacing="324" horzpos="0" horzsize="48188" flags="393216"/>
+  </hp:linesegarray>
+</hp:p>

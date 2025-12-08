@@ -82,6 +82,9 @@ def init_db():
             generated_title TEXT,
             language TEXT NOT NULL DEFAULT 'ko',
             status TEXT NOT NULL DEFAULT 'active',
+            template_id INTEGER,
+            prompt_user TEXT,
+            prompt_system TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
@@ -164,6 +167,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             template_id INTEGER NOT NULL,
             placeholder_key TEXT NOT NULL,
+            sort INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (template_id) REFERENCES templates (id) ON DELETE CASCADE
         )
@@ -188,6 +192,30 @@ def init_db():
     try:
         cursor.execute("""
             ALTER TABLE topics ADD COLUMN template_id INTEGER DEFAULT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass  # 컬럼이 이미 존재하면 무시
+
+    # Topics 테이블 마이그레이션: prompt_user 컬럼 추가 (v2.7 Sequential Planning)
+    try:
+        cursor.execute("""
+            ALTER TABLE topics ADD COLUMN prompt_user TEXT DEFAULT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass  # 컬럼이 이미 존재하면 무시
+
+    # Topics 테이블 마이그레이션: prompt_system 컬럼 추가 (v2.7 Sequential Planning)
+    try:
+        cursor.execute("""
+            ALTER TABLE topics ADD COLUMN prompt_system TEXT DEFAULT NULL
+        """)
+    except sqlite3.OperationalError:
+        pass  # 컬럼이 이미 존재하면 무시
+
+    # Topics 테이블 마이그레이션: source_type 컬럼 추가 (v2.8 Topic Source Type)
+    try:
+        cursor.execute("""
+            ALTER TABLE topics ADD COLUMN source_type TEXT NOT NULL DEFAULT 'basic'
         """)
     except sqlite3.OperationalError:
         pass  # 컬럼이 이미 존재하면 무시
@@ -228,6 +256,78 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # 프롬프트 고도화 결과 테이블 (v2.7+)
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS prompt_optimization_result (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+
+                -- 입력값 (사용자 요청)
+                user_prompt TEXT NOT NULL,
+
+                -- 분석 결과 (숨겨진 의도)
+                hidden_intent TEXT,
+                emotional_needs TEXT,  -- JSON 문자열
+                underlying_purpose TEXT,
+                formality TEXT,  -- 형식: formal, professional, casual
+                confidence_level TEXT,  -- 형식: low, medium, high
+                decision_focus TEXT,  -- 형식: strategic, tactical, operational
+
+                -- 최적화된 프롬프트 (Claude 정제)
+                role TEXT NOT NULL,
+                context TEXT NOT NULL,
+                task TEXT NOT NULL,
+
+                -- 메타데이터
+                model_name TEXT NOT NULL DEFAULT 'claude-sonnet-4-5-20250929',
+                latency_ms INTEGER DEFAULT 0,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                FOREIGN KEY (topic_id) REFERENCES topics (id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            )
+        """)
+    except sqlite3.OperationalError:
+        pass  # 테이블이 이미 존재하면 무시
+
+    # prompt_optimization_result 컬럼 마이그레이션 (v2.8+)
+    for column_def in (
+        "emotional_needs TEXT DEFAULT NULL",
+        "formality TEXT DEFAULT NULL",
+        "confidence_level TEXT DEFAULT NULL",
+        "decision_focus TEXT DEFAULT NULL",
+    ):
+        try:
+            cursor.execute(f"ALTER TABLE prompt_optimization_result ADD COLUMN {column_def}")
+        except sqlite3.OperationalError:
+            pass  # 컬럼이 이미 존재하면 무시
+
+    # prompt_optimization_result 테이블 마이그레이션: output_format, original_topic 컬럼 추가 (v2.8+)
+    for column_def in (
+        "output_format TEXT DEFAULT NULL",
+        "original_topic TEXT DEFAULT NULL",
+    ):
+        try:
+            cursor.execute(f"ALTER TABLE prompt_optimization_result ADD COLUMN {column_def}")
+        except sqlite3.OperationalError:
+            pass  # 컬럼이 이미 존재하면 무시
+
+    # placeholders 테이블 마이그레이션: sort 컬럼 추가 (v2.10+)
+    # PRAGMA table_info로 컬럼 존재 여부 확인 후 추가
+    cursor.execute("PRAGMA table_info(placeholders)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'sort' not in columns:
+        try:
+            cursor.execute("""
+                ALTER TABLE placeholders ADD COLUMN sort INTEGER NOT NULL DEFAULT 0
+            """)
+        except sqlite3.OperationalError:
+            pass  # 컬럼이 이미 존재하면 무시
+
     # 인덱스 생성
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_user_id ON reports(user_id)")
@@ -243,6 +343,9 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ai_usage_message_id ON ai_usage(message_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_templates_user_id ON templates(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_placeholders_template_id ON placeholders(template_id)")
+    # prompt_optimization_result 테이블 인덱스 (v2.7+)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_optimization_topic_date ON prompt_optimization_result(topic_id, created_at DESC)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_optimization_user_id ON prompt_optimization_result(user_id)")
 
     conn.commit()
     conn.close()

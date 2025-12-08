@@ -9,17 +9,22 @@ from typing import Optional
 import os
 import time
 import shutil
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from app.models.user import User
 from app.models.artifact import ArtifactResponse, ArtifactListResponse, ArtifactContentResponse, ArtifactCreate
+from app.models.convert_models import MdType
 from app.database.topic_db import TopicDB
 from app.database.message_db import MessageDB
 from app.database.artifact_db import ArtifactDB
 from app.utils.auth import get_current_active_user
 from app.utils.response_helper import success_response, error_response, ErrorCode
 from app.utils.hwp_handler import HWPHandler
-from app.utils.markdown_parser import parse_markdown_to_content
+from app.utils.markdown_parser import parse_markdown_to_content, parse_markdown_to_md_elements
+from app.utils.md_to_hwpx_converter import convert_markdown_to_hwpx
 from app.utils.file_utils import next_artifact_version, build_artifact_paths, sha256_of
 from shared.types.enums import ArtifactKind
 from shared.constants import ProjectPath
@@ -436,6 +441,158 @@ async def download_message_hwpx(
         )
 
 
+@router.post("/{artifact_id}/convert-hwpx", summary="Convert Markdown artifact to HWPX")
+async def convert_artifact_to_hwpx(
+    artifact_id: int,
+    current_user: User = Depends(get_current_active_user)
+):
+    """Convert a Markdown artifact directly into an HWPX document."""
+
+    artifact = ArtifactDB.get_artifact_by_id(artifact_id)
+    if not artifact:
+        return error_response(
+            code=ErrorCode.ARTIFACT_NOT_FOUND,
+            http_status=404,
+            message="아티팩트를 찾을 수 없습니다."
+        )
+
+    topic = TopicDB.get_topic_by_id(artifact.topic_id)
+    if not topic or (topic.user_id != current_user.id and not current_user.is_admin):
+        return error_response(
+            code=ErrorCode.TOPIC_UNAUTHORIZED,
+            http_status=403,
+            message="이 아티팩트에 접근할 권한이 없습니다."
+        )
+
+    if artifact.kind != ArtifactKind.MD:
+        return error_response(
+            code=ErrorCode.ARTIFACT_INVALID_KIND,
+            http_status=400,
+            message="MD 형식의 아티팩트만 변환할 수 있습니다.",
+            details={"current_kind": artifact.kind.value}
+        )
+
+    # === JSON Artifact Validation (CRITICAL) ===
+    # 같은 topic_id와 version을 가진 JSON artifact 검색
+    logger.info(f"[CONVERT-HWPX] Validating JSON artifact - artifact_id={artifact_id}, topic_id={artifact.topic_id}, version={artifact.version}")
+
+    json_artifacts, _ = ArtifactDB.get_artifacts_by_topic(artifact.topic_id)
+    matching_json = [
+        a for a in json_artifacts
+        if a.kind == ArtifactKind.JSON and a.version == artifact.version
+    ]
+
+    if not matching_json:
+        logger.warning(f"[CONVERT-HWPX] JSON artifact not found - artifact_id={artifact_id}, topic_id={artifact.topic_id}, version={artifact.version}")
+        return error_response(
+            code=ErrorCode.ARTIFACT_NOT_FOUND,
+            http_status=400,
+            message="JSON artifact가 없습니다.",
+            hint="관리자에게 문의하세요."
+        )
+
+    json_artifact = matching_json[0]
+    logger.info(f"[CONVERT-HWPX] JSON artifact found - json_artifact_id={json_artifact.id}")
+
+    # JSON artifact 파일 존재 여부 검증
+    json_artifact_path = Path(json_artifact.file_path)
+    if not json_artifact_path.exists():
+        logger.warning(f"[CONVERT-HWPX] JSON artifact file not found - path={json_artifact.file_path}")
+        return error_response(
+            code=ErrorCode.ARTIFACT_NOT_FOUND,
+            http_status=400,
+            message="JSON artifact 파일을 찾을 수 없습니다.",
+            hint="관리자에게 문의하세요."
+        )
+
+    if not artifact.file_path:
+        return error_response(
+            code=ErrorCode.ARTIFACT_NOT_FOUND,
+            http_status=404,
+            message="아티팩트 파일 경로가 지정되지 않았습니다."
+        )
+
+    artifact_path = Path(artifact.file_path)
+    if not artifact_path.exists():
+        return error_response(
+            code=ErrorCode.ARTIFACT_NOT_FOUND,
+            http_status=404,
+            message="아티팩트 파일을 찾을 수 없습니다.",
+            details={"file_path": artifact.file_path}
+        )
+
+    try:
+        md_text = artifact_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        return error_response(
+            code=ErrorCode.ARTIFACT_CONVERSION_FAILED,
+            http_status=400,
+            message="마크다운 파일을 읽을 수 없습니다.",
+            details={"error": str(exc)}
+        )
+
+    md_elements = parse_markdown_to_md_elements(md_text)
+    convertible = [
+        element for element in md_elements
+        if element.type not in (MdType.TITLE, MdType.NO_CONVERT)
+    ]
+    if not convertible:
+        return error_response(
+            code=ErrorCode.ARTIFACT_CONVERSION_FAILED,
+            http_status=400,
+            message="변환 가능한 마크다운 요소가 없습니다."
+        )
+
+    version = next_artifact_version(topic.id, ArtifactKind.HWPX, artifact.locale)
+    md_stem = Path(artifact.filename).stem or f"artifact_{artifact.id}"
+    hwpx_filename = f"{md_stem}.hwpx"
+    base_dir, hwpx_path = build_artifact_paths(topic.id, version, hwpx_filename)
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        convert_markdown_to_hwpx(md_elements, str(hwpx_path))
+        file_size = hwpx_path.stat().st_size
+    except FileNotFoundError as exc:
+        if hwpx_path.exists():
+            hwpx_path.unlink()
+        return error_response(
+            code=ErrorCode.TEMPLATE_NOT_FOUND,
+            http_status=500,
+            message="HWPX 템플릿 파일을 찾을 수 없습니다.",
+            details={"error": str(exc)}
+        )
+    except Exception as exc:
+        if hwpx_path.exists():
+            hwpx_path.unlink()
+        return error_response(
+            code=ErrorCode.ARTIFACT_CONVERSION_FAILED,
+            http_status=500,
+            message="HWPX 변환 중 오류가 발생했습니다.",
+            details={"error": str(exc)}
+        )
+
+    file_hash = sha256_of(hwpx_path)
+    hwpx_artifact = ArtifactDB.create_artifact(
+        topic_id=topic.id,
+        message_id=artifact.message_id,
+        artifact_data=ArtifactCreate(
+            kind=ArtifactKind.HWPX,
+            locale=artifact.locale,
+            version=version,
+            filename=hwpx_filename,
+            file_path=str(hwpx_path),
+            file_size=file_size,
+            sha256=file_hash
+        )
+    )
+
+    return FileResponse(
+        path=hwpx_artifact.file_path,
+        filename=hwpx_artifact.filename,
+        media_type="application/x-hwpx"
+    )
+
+
 @router.get("/topics/{topic_id}", summary="Get artifacts by topic")
 async def get_artifacts_by_topic(
     topic_id: int,
@@ -530,4 +687,3 @@ async def get_artifacts_by_topic(
             message="아티팩트 목록 조회에 실패했습니다.",
             details={"error": str(e)}
         )
-

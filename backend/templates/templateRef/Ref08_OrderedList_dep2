@@ -1,0 +1,14 @@
+	<hp:p
+		id="2147483648"
+		paraPrIDRef="21"
+		styleIDRef="0"
+		pageBreak="0"
+		columnBreak="0"
+		merged="0">
+	<hp:run charPrIDRef="13">
+		<hp:t><!-- OrderedNo_2_Start -->(1)<!-- OrderedNo_2_End --> </hp:t>
+	</hp:run>
+	<hp:run charPrIDRef="14">
+		<hp:t><!-- OrderedNm_2_Start -->최근 1년간 고객센터<!-- OrderedNm_2_End --></hp:t>
+	</hp:run>
+	</hp:p>
