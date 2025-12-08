@@ -963,6 +963,48 @@ markdown = await asyncio.to_thread(
 
 ---
 
-**마지막 업데이트:** 2025-11-28
-**버전:** 2.11.0
-**상태:** ✅ Structured Outputs 기반 JSON 강제 응답 완성
+### v2.12 (2025-12-08) - 관리자 비밀번호 자동 동기화
+
+✅ **시스템 시작 시 .env 비밀번호 자동 동기화**
+- init_admin_user() 함수 개선 → .env 변경 시 DB 자동 반영
+- 기존 관리자 계정이 있으면 비밀번호만 업데이트
+- 불필요한 DB 업데이트 방지 (해시값 비교)
+- Render 배포 환경에서 .env 비밀번호 변경 후 재시작 시 자동 동기화
+
+✅ **UserDB.update_user_password() 메서드 추가**
+- 기존 update_password() 메서드의 alias로 구현
+- 명확한 네이밍으로 관리자 비밀번호 동기화 용도 명시
+
+✅ **테스트 완료 (16/16 신규 + 21/21 회귀)**
+- TC-001 ~ TC-007: 해싱, 검증, 동기화 로직 검증 (16 PASS)
+- 회귀 테스트: auth + admin 기존 테스트 (21 PASS)
+- 총 커버리지: 87% (UserDB)
+
+✅ **구현 파일**
+- backend/app/main.py: init_admin_user() 개선
+- backend/app/database/user_db.py: update_user_password() 추가
+- backend/app/database/artifact_db.py: 문법 오류 수정 (Line 359 콜론 추가)
+- backend/tests/test_admin_password_sync.py: 신규 테스트 파일 (16개 TC)
+
+### 사용 방법
+
+**Render 배포 후 비밀번호 변경:**
+1. `.env` 파일에서 `ADMIN_PASSWORD` 수정
+2. 배포 재시작 (또는 대기 중인 경우 수동 Reboot)
+3. 로그 확인: "관리자 비밀번호가 업데이트되었습니다"
+4. 새로운 비밀번호로 로그인 테스트
+
+**초기 배포:**
+1. `.env` 설정: ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_USERNAME
+2. 앱 시작 (init_admin_user() 자동 호출)
+3. 로그 확인: "관리자 계정이 생성되었습니다"
+
+### Unit Spec
+- 파일: `backend/doc/specs/20251208_admin_password_reset.md`
+- 10개 섹션: 요구사항, 파일 목록, 흐름도, 7개 TC, 에러 처리, 구현 상세, 사용자 요청, 체크리스트
+
+---
+
+**마지막 업데이트:** 2025-12-08
+**버전:** 2.12.0
+**상태:** ✅ 관리자 비밀번호 자동 동기화 완성
