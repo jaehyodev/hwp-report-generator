@@ -167,7 +167,7 @@ export const artifactApi = {
     },
 
     /**
-     * 메시지 기반 HWPX 다운로드
+     * 메시지 기반 HWPX 다운로드 - 미사용
      * 메시지에서 다운로드 버튼을 클릭 시 호출합니다.
      * GET /api/artifacts/messages/{messageId}/hwpx/download
      * @param messageId 메시지 ID
@@ -217,12 +217,29 @@ export const artifactApi = {
     /**
      * hwpx 아티팩트 다운로드
      */
-    downloadHwpxArtifact: async (artifactId: number): Promise<ApiResponse<void>> => {
+    downloadHwpxArtifact: async (artifactId: number, filename: string): Promise<void> => {
         try {
             console.log('/api/artifacts/artifactId/convert-hwpx >> artifactId: ', artifactId)
-            const response = await api.post<ApiResponse<void>>(`${API_BASE_URL}${API_ENDPOINTS.DOWNLOAD_HWPX_ARTIFACT(artifactId)}`)
+            const response = await api.post<Blob>(
+                `${API_BASE_URL}${API_ENDPOINTS.DOWNLOAD_HWPX_ARTIFACT(artifactId)}`,
+                null,
+                {
+                    responseType: 'blob',   // ★ 여기가 핵심
+                }
+            )
             console.log('/api/artifacts/artifactId/convert-hwpx >> response: ', response)
-            return response.data;
+            
+            const blob = response.data
+
+            // Blob을 다운로드
+            const downloadUrl = window.URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = downloadUrl
+            link.download = filename
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            window.URL.revokeObjectURL(downloadUrl)
         } catch (error) {
             console.error('/api/artifacts/artifactId/convert-hwpx >> failed >> error: ', error)
             throw new Error('파일 다운로드에 실패했습니다.')

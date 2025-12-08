@@ -60,7 +60,7 @@ export const useReportPreview = () => {
 
             // 신버전
             console.log('useReportPreview >> handleDownload >> reportData >> ', reportData)
-            await artifactApi.downloadHwpxArtifact(reportData.reportId)
+            await artifactApi.downloadHwpxArtifact(reportData.reportId, hwpxFilename)
 
             const downloadedFile: DownloadedFile = {
                 id: reportData.messageId,
