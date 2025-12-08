@@ -21,6 +21,7 @@ class MdType(str, Enum):
     QUOTATION = "quotation"
     NORMAL_TEXT = "NormalText"
     HORIZON_LINE = "HorizonLine"
+    DATE = "Date"
     NO_CONVERT = "NO_CONVERT"
 
 

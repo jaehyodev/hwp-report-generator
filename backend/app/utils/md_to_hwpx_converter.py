@@ -30,6 +30,7 @@ REF_FILENAME_MAP = {
     MdType.QUOTATION: "Ref04_Quotation",
     MdType.NORMAL_TEXT: "Ref02_NormalText",
     MdType.HORIZON_LINE: "Ref03_HorizonLine",
+    MdType.DATE: "Ref09_Date",
 }
 
 
@@ -318,7 +319,12 @@ def _build_snippet_from_ref(element: MdElement, ref_dir: Path) -> str:
     content = escape_xml(element.content.strip())
     number_value = str(element.number if element.number is not None else 1)
 
-    if element.type == MdType.SECTION:
+    if element.type == MdType.DATE:
+        template = template.replace(
+            "<!-- Date_Start -->{{ DATE }}<!-- Date_End -->",
+            f"<!-- Date_Start -->{content}<!-- Date_End -->",
+        )
+    elif element.type == MdType.SECTION:
         template = template.replace(
             "<!-- SubTitleNo_Start -->5<!-- SubTitleNo_End -->",
             f"<!-- SubTitleNo_Start -->{number_value}<!-- SubTitleNo_End -->",

@@ -317,6 +317,7 @@ async def get_my_topics(
         ```
     """
 
+
     try:
         # Validate page_size
         if page_size > 100:
@@ -1935,17 +1936,6 @@ async def _background_generate_report(
             status=ARTIFACT_STATUS_GENERATING,
             progress_percent=50
         )
-
-        # TODO: 마크다운 파싱 필요 없을 경우 해당 내용 필요 없을 것 같아 우선 주석 처리 추후 응답받은 마크다운은 자체 양식으로 파싱이 필요할 경우 다시 살릴 수 있음
-        # ✅ Non-blocking: 파싱을 스레드 끝에서 실행
-        # parsed_content = await asyncio.to_thread(
-        #     parse_markdown_to_content,
-        #     markdown
-        # )
-        # built_markdown = await asyncio.to_thread(
-        #     build_report_md,
-        #     markdown
-        # )
 
         # === Step 4: MD 파일 저장 ===
         logger.info(f"[BACKGROUND] Saving MD file - topic_id={topic_id}")

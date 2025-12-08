@@ -15,6 +15,7 @@ PATTERNS = {
     "image": re.compile(r"!\[([^\[\]]*)\]\(([^)]+)\)"),
     "checkbox": re.compile(r"^\s*[-*]\s+\[[\sx]\]\s+"),
     "html_tag": re.compile(r"<(script|style|iframe|embed|object)[^>]*>", re.IGNORECASE),
+    "date": re.compile(r"^생성일\s*:\s*(\d{4}\.\d{2}\.\d{2})$"),
     "h1": re.compile(r"^#\s+(.+)$"),
     "h2": re.compile(r"^##\s+(.+)$"),
     "ordered_list": re.compile(r"^(\s*)\d+\.\s+(.+)$"),
@@ -34,6 +35,7 @@ REF_FILENAME_MAP = {
     MdType.QUOTATION: "Ref04_Quotation",
     MdType.NORMAL_TEXT: "Ref02_NormalText",
     MdType.HORIZON_LINE: "Ref03_HorizonLine",
+    MdType.DATE: "Ref09_Date",
 }
 
 
@@ -537,13 +539,13 @@ def extract_title_from_markdown(md_text: str) -> str:
 
 
 def parse_markdown_to_md_elements(md_content: str) -> List[MdElement]:
-    """Parse markdown lines into MdElement objects following Section 7.1.
+    """Markdown 문자열을 분석하여 Section 7.1 규칙에 따라 MdElement 객체 목록으로 변환합니다.
 
     Args:
-        md_content: Raw markdown string that should be converted.
+        md_content: 변환 대상이 되는 원본 Markdown 문자열.
 
     Returns:
-        Ordered MdElement instances describing each convertible (or filtered) line.
+        변환 가능하거나 필터링된 각 라인을 순서대로 표현하는 MdElement 객체들의 리스트.
     """
 
     lines = md_content.split("\n") if md_content else []
@@ -644,20 +646,27 @@ def parse_markdown_to_md_elements(md_content: str) -> List[MdElement]:
                 previous_type = MdType.UNORDERED_LIST_DEP2
                 continue
 
-        # 5. Quotations
+        # 5. Date
+        date_match = PATTERNS["date"].match(stripped_line)
+        if date_match:
+            elements.append(_build_element(MdType.DATE, date_match.group(1).strip()))
+            previous_type = MdType.DATE
+            continue
+
+        # 6. Quotations
         quote_match = PATTERNS["quotation"].match(stripped_line)
         if quote_match:
             elements.append(_build_element(MdType.QUOTATION, quote_match.group(1).strip()))
             previous_type = MdType.QUOTATION
             continue
 
-        # 6. Horizontal rules
+        # 7. Horizontal rules
         if PATTERNS["horizon_line"].match(stripped_line):
             elements.append(_build_element(MdType.HORIZON_LINE, stripped_line))
             previous_type = MdType.HORIZON_LINE
             continue
 
-        # 7. Fallback: normal text
+        # 8. Fallback: normal text
         elements.append(_build_element(MdType.NORMAL_TEXT, stripped_line))
         previous_type = MdType.NORMAL_TEXT
 
