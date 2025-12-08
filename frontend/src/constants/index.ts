@@ -88,6 +88,7 @@ export const API_ENDPOINTS = {
     DOWNLOAD_MESSAGE_HWPX: (messageId: number, locale: string = 'ko') => `/api/artifacts/messages/${messageId}/hwpx/download?locale=${locale}`, // 메시지 기반 HWPX 다운로드 (자동 생성)
     LIST_ARTIFACTS_BY_TOPIC: (topicId: number) => `/api/artifacts/topics/${topicId}`, // 토픽의 아티팩트 목록
     CONVERT_ARTIFACT: (artifactId: number) => `/api/artifacts/${artifactId}/convert`, // MD to HWPX 변환
+    DOWNLOAD_HWPX_ARTIFACT: (artifactId: number) => `/api/artifacts/${artifactId}/convert-hwpx`, // hwpx 파일 다운로드
 
     // 템플릿 API
     LIST_TEMPLATES: '/api/templates', // 내 템플릿 목록

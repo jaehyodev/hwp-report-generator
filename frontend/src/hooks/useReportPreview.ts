@@ -54,7 +54,13 @@ export const useReportPreview = () => {
     const handleDownload = async (reportData: ReportData): Promise<DownloadResult> => {
         try {
             const hwpxFilename = reportData.filename.replace('.md', '.hwpx')
-            await artifactApi.downloadMessageHwpx(reportData.messageId, hwpxFilename)
+            
+            // 구버전
+            // await artifactApi.downloadMessageHwpx(reportData.messageId, hwpxFilename)
+
+            // 신버전
+            console.log('useReportPreview >> handleDownload >> reportData >> ', reportData)
+            await artifactApi.downloadHwpxArtifact(reportData.reportId)
 
             const downloadedFile: DownloadedFile = {
                 id: reportData.messageId,
