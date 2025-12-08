@@ -218,10 +218,14 @@ export const artifactApi = {
      * hwpx 아티팩트 다운로드
      */
     downloadHwpxArtifact: async (artifactId: number): Promise<ApiResponse<void>> => {
-        const response = await api.post<ApiResponse<void>>(`${API_BASE_URL}${API_ENDPOINTS.DOWNLOAD_HWPX_ARTIFACT(artifactId)}`)
-        
-        console.log('/api/artifacts/artifactId/convert-hwpx >> response ', response)
-
-        return response.data;
+        try {
+            console.log('/api/artifacts/artifactId/convert-hwpx >> artifactId: ', artifactId)
+            const response = await api.post<ApiResponse<void>>(`${API_BASE_URL}${API_ENDPOINTS.DOWNLOAD_HWPX_ARTIFACT(artifactId)}`)
+            console.log('/api/artifacts/artifactId/convert-hwpx >> response: ', response)
+            return response.data;
+        } catch (error) {
+            console.error('/api/artifacts/artifactId/convert-hwpx >> failed >> error: ', error)
+            throw new Error('파일 다운로드에 실패했습니다.')
+        }    
     } 
 }
