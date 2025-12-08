@@ -1,5 +1,5 @@
 import api from './api'
-import {API_ENDPOINTS} from '../constants/'
+import {API_BASE_URL, API_ENDPOINTS} from '@/constants/'
 import type {TopicCreate, TopicUpdate, Topic, TopicListResponse, AskRequest, AskResponse, PlanRequest, PlanResponse, TopicGenerationStatus} from '../types/topic'
 import type {ApiResponse} from '../types/api'
 import { storage } from '@/utils/storage'
@@ -274,11 +274,8 @@ export const topicApi = {
         const controller = new AbortController()
 
         // EventSource 생성
-        fetchEventSource(`http://localhost:8000/api/topics/${topicId}/status/stream`, {
+        fetchEventSource(`${API_BASE_URL}${API_ENDPOINTS.GET_GENERATION_STATUS_STREAM}`, {
             method: 'GET',
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
             signal: controller.signal, // AbortController signal 추가
             openWhenHidden: true, // 탭이 숨겨져도 연결 유지 (재연결 방지)
             onmessage: (event) => {

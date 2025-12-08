@@ -4,11 +4,19 @@ import {useAuth} from '../../hooks/useAuth'
 import DeleteChatMessageModal from './DeleteChatMessageModal'
 import type {MessageUI} from '../../types/ui/MessageUI'
 import styles from './ChatMessage.module.css'
+import {useMessage} from '@/contexts/MessageContext'
+import { TOAST_MESSAGES } from '@/constants'
+
+// 보고서 다운로드 결과
+interface DownloadResult {
+    ok: boolean
+    error? : string
+}
 
 interface ChatMessageProps {
     message: MessageUI
     onReportClick: (reportData: {filename: string; content: string; messageId: number; reportId: number}) => void
-    onDownload: (reportData: {filename: string; content: string; messageId: number; reportId: number}) => void
+    onDownload: (reportData: {filename: string; content: string; messageId: number; reportId: number}) => Promise<DownloadResult>
     onDelete?: (messageId: number, clientId: number) => void
     isGenerating?: boolean
     isDeleting?: boolean
@@ -18,6 +26,7 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
     const {user} = useAuth()
     const [isHovered, setIsHovered] = useState(false)
     const [showDeleteModal, setShowDeleteModal] = useState(false)
+    const {antdMessage} = useMessage() // 토스트 메시지
 
     const formatTime = (date: Date) => {
         return date.toLocaleTimeString('ko-KR', {
@@ -39,6 +48,30 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
 
     const handleCancelDelete = () => {
         setShowDeleteModal(false)
+    }
+
+    // 보고서 다운로드
+    const handleDownload = async() => {
+        try {
+            // 다운로드할 보고서 데이터
+            const reportData = {
+                filename: message.reportData!.filename,
+                content: message.reportData!.content,
+                messageId: message.id!,
+                reportId: message.reportData!.reportId
+            }
+            
+            // 보고서 다운로드 결과
+            const result = await onDownload(reportData)
+
+            if (result.ok) {
+                antdMessage.success(TOAST_MESSAGES.HWPX_DOWNLOAD_SUCCESS)
+            } else {
+                antdMessage.error(TOAST_MESSAGES.HWPX_DOWNLOAD_FAILED)
+            }
+        } catch (error) {
+            antdMessage.error(TOAST_MESSAGES.HWPX_DOWNLOAD_FAILED)
+        }
     }
 
     return (
@@ -119,12 +152,7 @@ const ChatMessage = ({message, onReportClick, onDownload, onDelete, isGenerating
                                     className={styles.reportDownloadBtn}
                                     onClick={(e) => {
                                         e.stopPropagation()
-                                        onDownload({
-                                            filename: message.reportData!.filename,
-                                            content: message.reportData!.content,
-                                            messageId: message.id!,
-                                            reportId: message.reportData!.reportId
-                                        })
+                                        handleDownload
                                     }}
                                     title="HWPX 다운로드">
                                     <DownloadOutlined />
