@@ -321,54 +321,6 @@ class StructuredClaudeClient:
         except Exception as e:
             logger.error(f"[INVOKE_STRUCTURED] Claude API 호출 중 오류 발생: {str(e)}")
             raise Exception(f"Claude API Structured Outputs 호출 실패: {str(e)}")
-
-    def _build_user_message_topic(self, topic: str, section_schema: dict) -> str:
-        """Claude에 전달할 User Message 빌드
-
-        Args:
-            topic: 보고서 주제
-            section_schema: 섹션 스키마
-
-        Returns:
-            User message 문자열
-        """
-        sections_info = json.dumps(section_schema, ensure_ascii=False, indent=2)
-
-        message = f"""당신은 구조화된 JSON 형식으로 보고서 섹션을 생성하는 전문가입니다.
-
-## 보고서 주제
-{topic}
-
-## 필수 섹션 메타정보
-
-아래 섹션 정의를 따라 JSON 형식으로 보고서를 작성하세요:
-
-{sections_info}
-
-
-## 중요 지침
-
-1. **반드시 JSON만 출력하세요** - 설명이나 주석 금지
-
-2. **content 필드 작성 규칙 (필수)**
-   - content 필드에는 순수 텍스트만 포함하세요
-   - Markdown 형식(#, ##, -, 1. 등)을 content에 포함하지 마세요
-   - 예시:
-     ❌ "content": "# 2025 글로벌 AI 시장 분석 보고서"
-     ✅ "content": "2025 글로벌 AI 시장 분석 보고서"
-     
-   - 예시:
-     ❌ "content": "## 2. 시장 배경 분석"
-     ✅ "content": "시장 배경 분석"
-
-3. **order 필드 정확성** - 섹션 순서를 order에 명시하세요
-
-4. **모든 필수 섹션을 포함하세요** - 누락된 섹션이 없도록 확인
-
-이제 위의 섹션 정의에 맞춰 JSON 형식의 보고서를 생성하세요."""
-
-
-        return message
     
     def _build_user_message_content(self, content: str, section_schema: dict, assitant_md: str) -> str:
         """Claude에 전달할 User Message 빌드

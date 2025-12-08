@@ -39,6 +39,7 @@ from app.utils.claude_client import ClaudeClient
 from app.utils.structured_client import StructuredClaudeClient
 from app.utils.prompts import (
     create_topic_context_message,
+    get_base_report_prompt,
     get_system_prompt,
     create_section_schema,
 )
@@ -697,55 +698,12 @@ async def ask(
             assistant_messages = [ref_msg]
             logger.info(f"[ASK] Including reference assistant message - message_id={ref_msg.id}")
 
-    # assistant 메시지 구성을 prompt에 구성하여 포함하게 함. 
-    # 컨텍스트 배열 구성
-    # context_messages = sorted(
-    #     user_messages + assistant_messages,
-    #     key=lambda m: m.seq_no
-    # )
-
-
     # 최종 User message 구성
     user_message = _build_user_message_content(body.content, section_schema, ref_msg.content)
 
     claude_messages = [
         {"role": "user", "content": user_message}
     ]
-
-    # TODO: 문서 내용 주입 정말 필요한지 재검토
-    # 문서 내용 주입
-    # if body.include_artifact_content and reference_artifact:
-    #     logger.info(f"[ASK] Loading artifact content - artifact_id={reference_artifact.id}, path={reference_artifact.file_path}")
-
-    #     try:
-    #         with open(reference_artifact.file_path, 'r', encoding='utf-8') as f:
-    #             md_content = f.read()
-
-    #         original_length = len(md_content)
-    #         if len(md_content) > MAX_MD_CHARS:
-    #             md_content = md_content[:MAX_MD_CHARS] + "\n\n... (truncated)"
-    #             logger.info(f"[ASK] Artifact content truncated - original={original_length}, truncated={MAX_MD_CHARS}")
-
-    #         seq_no = context_messages[-1].seq_no + 0.5 if context_messages else 0
-    #         artifact_msg = _build_artifact_message(content, md_content, seq_no)
-
-    #         context_messages.append(artifact_msg)
-    #         logger.info(f"[ASK] Artifact content injected - length={len(md_content)}")
-
-    #     except Exception as e:
-    #         logger.error(f"[ASK] Failed to load artifact content - error={str(e)}")
-    #         return error_response(
-    #             code=ErrorCode.ARTIFACT_DOWNLOAD_FAILED,
-    #             http_status=500,
-    #             message="아티팩트 파일을 읽을 수 없습니다.",
-    #             details={"error": str(e)}
-    #         )
-
-    # Claude 메시지 배열 변환
-    # claude_messages = [
-    #     {"role": m.role.value, "content": m.content}
-    #     for m in context_messages
-    # ]
 
     # Topic context를 첫 번째 메시지로 추가
     topic_context_msg = create_topic_context_message(topic.input_prompt)
@@ -793,8 +751,6 @@ async def ask(
         f"[ASK] Using composed system prompt from topic DB - "
         f"length={len(system_prompt)}B"
     )
-
-    
 
     # === 6단계: Claude 호출 ===
     logger.info(f"[ASK] Calling Claude API - messages={len(claude_messages)}, use_json_schema={section_schema is not None}")
@@ -1140,8 +1096,19 @@ async def plan_report(
                     prompt_user = None
                     prompt_system = None
                 else:
+                    markdown_rule = get_base_report_prompt()
+                    output_format = opt_result.get('output_format')
                     prompt_user = opt_result.get('user_prompt')
-                    prompt_system = opt_result.get('output_format')
+                    prompt_system = f"""# 보고서 작성규칙
+                    {markdown_rule}
+
+                    ---
+
+                    # output_format: 
+                    {output_format}
+                    """
+
+                    #prompt_system = ""+output_format + "\n--- \n# 보고서 작성규칙 \n" +  markdown_rule
 
                 # 3-2. prompt_user, prompt_system (output_format) 저장
                 try:
@@ -1855,7 +1822,7 @@ async def _background_generate_report(
         claude = ClaudeClient()
 
         # User prompt 구성
-        user_prompt = _build_user_message_topic(topic, plan, section_schema)
+        user_prompt = _build_user_message_topic_for_plan(topic, plan, section_schema)
 
         # === Step 2.5: System Prompt 합성 (TopicDB 기반) ===
         system_prompt = _compose_system_prompt(
@@ -2099,7 +2066,7 @@ async def _background_generate_report(
             logger.error(f"[BACKGROUND] Failed to update artifact status - error={str(db_error)}")
 
 
-def _build_user_message_topic(topic: str, plan: str ,section_schema: dict) -> str:
+def _build_user_message_topic_for_plan(topic: str, plan: str ,section_schema: dict) -> str:
     """Claude에 전달할 User Message 빌드
 
     Args:
@@ -2130,7 +2097,7 @@ def _build_user_message_topic(topic: str, plan: str ,section_schema: dict) -> st
 
 2. **content 필드 작성 규칙 (필수)**
    - content 필드에는 순수 텍스트만 포함하세요
-   - Markdown 형식(#, ##, -, 1. 등)을 content에 포함하지 마세요
+   - Markdown 형식(#, ## 등)을 content에 포함하지 마세요
    - 예시:
      ❌ "content": "# 2025 글로벌 AI 시장 분석 보고서"
      ✅ "content": "2025 글로벌 AI 시장 분석 보고서"
