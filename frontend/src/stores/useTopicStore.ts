@@ -71,7 +71,7 @@ interface TopicStore {
     clearPlan: () => void
 
     // Actions - 보고서 생성
-    generateReportFromPlan: () => Promise<{ ok: boolean, error?: any}>
+    generateReportFromPlan: () => Promise<{ ok: boolean, error?: any, topicId: number}>
 
     // Actions - 생성 상태 관리
     addGeneratingTopicId: (topicId: number) => void
@@ -448,7 +448,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
 
             if (!plan) {
                 // antdMessage.error('계획 정보가 없습니다.')
-                return { ok: false, error: 'NO_PLAN' }
+                // topicId가 없으므로 -1 또는 0 사용
+                return { ok: false, error: 'NO_PLAN', topicId: -1 } 
             }
 
             console.log('generateReportFromPlan >> plan >> ', plan)
@@ -457,138 +458,28 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             const templateId = selectedTemplateId || 1 // 선택된 템플릿 ID 사용, fallback: 1
             const messageStore = useMessageStore.getState()
 
-            try {
-                // AI 응답 대기 상태 설정 (GeneratingIndicator 표시)
-                // 보고서 생성 버튼 클릭 시점에는 selectedTopicId=0 (계획 모드)
-                get().addGeneratingTopicId(0)
+            // AI 응답 대기 상태 설정 (GeneratingIndicator 표시)
+            // 보고서 생성 버튼 클릭 시점에는 selectedTopicId=0 (계획 모드)
+            get().addGeneratingTopicId(0)
 
-                // antdMessage.loading({
-                //     content: '보고서 생성 요청 중...',
-                //     key: `generate-${realTopicId}`,
-                //     duration: 0
-                // })
+            // 💡 Promise로 감싸서 최종 결과를 기다리도록 합니다. 외부 try...catch를 제거하고 Promise 내부에서 처리합니다.
+            return new Promise(async (resolve) => {
+                try {
+                    // 1. 백그라운드 보고서 생성 API 호출
+                    await topicApi.generateTopicBackground(realTopicId, {
+                        topic: plan.plan.split('\n')[0].replace('# ', '').replace(' 작성 계획', ''), // 첫 줄에서 주제 추출
+                        plan: plan.plan,
+                        template_id: templateId
+                    })
 
-                // 백그라운드 보고서 생성 API 호출 (새로운 API)
-                const response = await topicApi.generateTopicBackground(realTopicId, {
-                    topic: plan.plan.split('\n')[0].replace('# ', '').replace(' 작성 계획', ''), // 첫 줄에서 주제 추출
-                    plan: plan.plan,
-                    template_id: templateId
-                })
-
-                // antdMessage.destroy(`generate-${realTopicId}`)
-
-                // 202 Accepted - 백그라운드에서 생성 중
-                if (response.status === 'generating') {
-                    // antdMessage.loading({
-                    //     content: '보고서 생성 중...',
-                    //     key: `generating-${realTopicId}`,
-                    //     duration: 0
-                    // })
-
-                    // 폴링으로 상태 확인 (3초마다, 최대 30초)
-                    // let attempts = 0
-                    // const maxAttempts = 10
-                    // const pollInterval = 3000
-
-                    // const checkStatus = async () => {
-                    //     try {
-                    //         const status = await topicApi.getGenerationStatus(realTopicId)
-
-                    //         if (status.status === 'completed') {
-                    //             antdMessage.destroy('generating')
-                    //             antdMessage.success('보고서가 생성되었습니다.')
-
-                    //             const messageStore = useMessageStore.getState()
-
-                    //             // 1. 기존 계획 모드 메시지 (topicId=0) 가져오기
-                    //             const planMessages = messageStore.getMessages(0)
-
-                    //             // 2. 서버에서 메시지 + Artifact 조회
-                    //             const messagesResponse = await messageApi.listMessages(realTopicId)
-                    //             const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
-                    //             const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
-                    //             const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
-
-                    //             // 3. 계획 메시지의 topicId 업데이트 (0 → realTopicId)
-                    //             const updatedPlanMessages = planMessages.map((msg) => ({
-                    //                 ...msg,
-                    //                 topicId: realTopicId
-                    //             }))
-
-                    //             // 4. 중복 제거: ID 기반으로 중복 체크
-                    //             const planMessageIds = new Set(updatedPlanMessages.filter((m) => m.id).map((m) => m.id))
-                    //             const newServerMessages = serverMessages.filter((m: MessageModel) => {
-                    //                 if (!m.id) return true // ID 없으면 추가
-                    //                 return !planMessageIds.has(m.id) // 중복 체크
-                    //             })
-
-                    //             // 5. 계획 메시지 + 서버 메시지 병합
-                    //             const mergedMessages = [...updatedPlanMessages, ...newServerMessages]
-                    //             messageStore.setMessages(realTopicId, mergedMessages)
-
-                    //             // 6. 계획 모드 메시지 정리 (topicId=0 삭제)
-                    //             messageStore.clearMessages(0)
-
-                    //             // 7. 생성된 토픽을 서버에서 조회하여 사이드바에 추가
-                    //             try {
-                    //                 const newTopic = await topicApi.getTopic(realTopicId)
-                    //                 // addTopic을 호출하여 sidebarTopics과 pageTopics에 모두 추가
-                    //                 get().addTopic(newTopic)
-                    //             } catch (error) {
-                    //                 console.error('Failed to fetch new topic for sidebar:', error)
-                    //                 // 사이드바 토픽 목록 전체 새로고침 (fallback)
-                    //                 get().loadSidebarTopics()
-                    //             }
-
-                    //             // 8. selectedTopicId 전환
-                    //             set({selectedTopicId: realTopicId})
-
-                    //             messageStore.setIsGeneratingMessage(false)
-                    //         } else if (status.status === 'failed') {
-                    //             antdMessage.destroy('generating')
-                    //             antdMessage.error(status.error_message || '보고서 생성에 실패했습니다.')
-                    //             messageStore.setIsGeneratingMessage(false)
-                    //         } else if (attempts < maxAttempts) {
-                    //             // 계속 진행 중
-                    //             attempts++
-                    //             setTimeout(checkStatus, pollInterval)
-                    //         } else {
-                    //             antdMessage.destroy('generating')
-                    //             antdMessage.warning('보고서 생성이 오래 걸립니다. 잠시 후 다시 확인해주세요.')
-
-                    //             // 타임아웃이어도 토픽을 사이드바에 추가
-                    //             try {
-                    //                 const newTopic = await topicApi.getTopic(realTopicId)
-                    //                 get().addTopic(newTopic)
-                    //             } catch (error) {
-                    //                 console.error('Failed to fetch new topic for sidebar:', error)
-                    //                 get().loadSidebarTopics()
-                    //             }
-
-                    //             // 타임아웃이어도 topic으로 전환
-                    //             set({selectedTopicId: realTopicId})
-                    //             messageStore.setIsGeneratingMessage(false)
-                    //         }
-                    //     } catch (error) {
-                    //         console.error('상태 확인 실패:', error)
-                    //         antdMessage.destroy('generating')
-                    //         antdMessage.error('상태 확인에 실패했습니다.')
-                    //         messageStore.setIsGeneratingMessage(false)
-                    //     }
-                    // }
-
-                    // 첫 상태 확인 시작
-                    // setTimeout(checkStatus, pollInterval)
-
-                    // 중복 처리 방지 플래그
+                    // 2. 202 Accepted - 백그라운드에서 생성 중, SSE 시작
                     let isCompleted = false
 
                     const unsubscribe = topicApi.getGenerationStatusStream(
                         realTopicId,
                         async (status) => {
-                            // 이미 완료/실패 처리됐으면 무시
-                            if (isCompleted) return
-
+                            if (isCompleted) return // 이미 완료/실패 처리됐으면 무시
+                        
                             // SSE 상태를 메시지 스토어에 반영
                             messageStore.setGeneratingReportStatus({
                                 topicId: realTopicId,
@@ -598,38 +489,25 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 errorMessage: status.error_message
                             });
 
-                            if (status.status === 'completed') {
-                                // 즉시 플래그 설정 + 연결 종료 (두 번째 이벤트 방지)
+                            if (status.status === 'completed') {                               
                                 isCompleted = true
                                 unsubscribe()
 
-                                // antdMessage.destroy(`generating-${realTopicId}`)
-                                // antdMessage.success('보고서가 생성되었습니다.')
-
-                                // 토픽id 0의 메시지
+                                // 3. 완료 시 데이터 병합 및 상태 업데이트 로직
                                 const planMessages = messageStore.getMessages(0)
-                                // 서버에 있는 메시지 목록 요청
                                 const messagesResponse = await messageApi.listMessages(realTopicId)
-                                // 메시지를 도메인으로 변환
                                 const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
-                                // 현재 대화에 해당하는 아티팩트 목록 요청
                                 const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
-                                // 메시지 목록과 아티팩트 목록 결합
                                 const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
-                                // 토픽id 0의 메시지를 실제 서버 토픽id로 변경
                                 const updatedPlanMessages = planMessages.map((msg) => ({
                                     ...msg,
                                     topicId: realTopicId
-                                }))
-                                
-                                // 토픽id 0이었던 메시지들의 id를 set구조로 변환
+                                }))  
                                 const planMessageIds = new Set(updatedPlanMessages.filter((m) => m.id).map((m) => m.id))
-                                // 서버에서 받은 메시지를 토픽id 0이었던 메시지와 겹치치 않게 필터
                                 const newServerMessages = serverMessages.filter((m: MessageModel) => {
                                     if (!m.id) return true
                                     return !planMessageIds.has(m.id)
                                 })
-                                // 서버에서 가져온 메시지와 합침
                                 const mergedMessages = [...updatedPlanMessages, ...newServerMessages]
                                 messageStore.setMessages(realTopicId, mergedMessages)
                                 messageStore.clearMessages(0)
@@ -644,36 +522,44 @@ export const useTopicStore = create<TopicStore>((set, get) => {
 
                                 set({ selectedTopicId: realTopicId })
                                 get().removeGeneratingTopicId(0)
+
+                                // ✅ Promise resolve: 성공 상태를 반환
+                                resolve({ ok: true, topicId: realTopicId })
                             } else if (status.status === 'failed') {
                                 isCompleted = true
                                 unsubscribe()
 
-                                // antdMessage.destroy(`generating-${realTopicId}`)
-                                // antdMessage.error('보고서 생성에 실패했습니다.')
                                 get().removeGeneratingTopicId(0)
                                 messageStore.setGeneratingReportStatus(undefined)
+
+                                // ✅ Promise resolve: 비즈니스 로직 상 ok: false를 반환하여 호출자에게 알림
+                                resolve({ ok: false, error: status.error_message || '보고서 생성 실패', topicId: realTopicId })
                             }
-                        }, (error) => {
+                        }, 
+                        // SSE 에러 핸들러
+                        (error) => {
                             if (isCompleted) return
                             isCompleted = true
                             unsubscribe()
 
                             console.error('SSE error:', error)
-                            // antdMessage.destroy(`generating-${realTopicId}`)
-                            // antdMessage.error('보고서 상태 확인 중 오류가 발생했습니다.')
+
                             get().removeGeneratingTopicId(0)
                             messageStore.setGeneratingReportStatus(undefined)
+
+                            // ✅ Promise resolve: 에러 상태 반환
+                            resolve({ ok: false, error: error, topicId: realTopicId})
                         }
                     )
+                } catch (error: any) {
+                    // 4. 최초 topicApi.generateTopicBackground 호출 실패 처리
+                    console.error('보고서 생성 요청 실패:', error)
+                    get().removeGeneratingTopicId(0)
+                    
+                    // ✅ Promise resolve: 실패 상태 반환
+                    resolve({ ok: false, error: error, topicId: realTopicId })
                 }
-                return { ok: true }
-            } catch (error: any) {
-                console.error('보고서 생성 실패:', error)
-                // antdMessage.destroy(`generate-${realTopicId}`)
-                // antdMessage.error('보고서 생성에 실패했습니다.')
-                get().removeGeneratingTopicId(0)
-                return { ok: false, error: error}
-            }
+            })
         }
     }
 })

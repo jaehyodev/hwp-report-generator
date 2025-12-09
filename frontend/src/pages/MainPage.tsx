@@ -75,9 +75,24 @@ const MainPage = () => {
         // OutlineMessage 버튼 숨기기
         setShowOutlineButtons(false)
 
+        // 보고서 생성 요청 중 토스트 출력
+        antdMessage.loading({
+            content: TOAST_MESSAGES.REPORT_GENERATING,
+            key: `generate-${plan?.topic_id}`,
+            duration: 0
+        })
+
         // 보고서 생성 중 에러 발생 시 다시 보고서 생성하시겠습니까 버튼 활성화.
         const result = await generateReportFromPlan()
-        if (!result.ok) {
+
+        // 보고서 생성 요청 중 토스트 제거
+        antdMessage.destroy(`generate-${plan?.topic_id}`)
+
+        if (result.ok) {
+            // 보고서 생성 완료 토스트 출력
+            antdMessage.success(TOAST_MESSAGES.REPORT_SUCCESS);
+        } else {
+            antdMessage.error(TOAST_MESSAGES.REPORT_FAILED)
             setShowOutlineButtons(true)
         }
     }
