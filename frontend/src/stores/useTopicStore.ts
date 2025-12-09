@@ -373,30 +373,18 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                 // 4. plan 상태에서 결과 가져와서 메시지로 추가,
                 const currentPlan = get().plan
                 if (currentPlan) {
-                    // assistant 메시지를 ui에 즉시 반영하기위해 생성
-                    const assistantMsgModel: MessageModel = {
-                        id: undefined,
-                        topicId: currentPlan?.topic_id, // ⚠️ 먼저 tempTopicId=0에 저장
-                        role: 'assistant',
-                        content: currentPlan.plan,
-                        seqNo: undefined,
-                        createdAt: new Date().toISOString(),
-                        isPlan: true // 계획 메시지 표시
-                    }
+                    const messageStore = useMessageStore.getState()
 
-                    // AI 응답 메시지를 tempTopicId=0에 추가
-                    addMessages(currentPlan?.topic_id, [assistantMsgModel])
-
-                    // 서버에서 메시지들을 가져옵니다.
+                    // 서버에서 메시지들을 먼저 가져옵니다 (selectedTopicId 변경 전에!)
                     try {
-                        const messageStore = useMessageStore.getState()
                         // 기존 메시지 및 아티팩트를 서버에서 가져와 표시합니다.
                         const messagesResponse = await messageApi.listMessages(currentPlan?.topic_id)
                         const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
                         const artifactsResponse = await artifactApi.listArtifactsByTopic(currentPlan?.topic_id)
                         const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
-                        messageStore.setMessages(currentPlan?.topic_id, serverMessages) // 실제 토픽 ID에 메시지 설정
-                        messageStore.clearMessages(0) // 임시 토픽(0)의 메시지 제거
+
+                        // 실제 토픽 ID에 메시지 먼저 설정 (화면 깜빡임 방지)
+                        messageStore.setMessages(currentPlan?.topic_id, serverMessages)
                     } catch (fetchError) {
                         console.error("Failed to fetch initial messages for realTopicId:", fetchError);
                         // 메시지 로딩 실패 시 에러 처리 (예: 사용자에게 알림)
@@ -411,10 +399,13 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                         console.error('Failed to fetch new topic for sidebar:', error)
                         get().loadSidebarTopics()
                     }
-                }
 
-                // 현재 토픽을 실제 토픽으로 변경
-                set({ selectedTopicId: currentPlan?.topic_id })
+                    // 현재 토픽을 실제 토픽으로 변경 (메시지 설정 후에!)
+                    set({ selectedTopicId: currentPlan?.topic_id })
+
+                    // 임시 토픽(0)의 메시지 제거 (selectedTopicId 변경 후에!)
+                    messageStore.clearMessages(0)
+                }
 
                 // PLAN 생성 완료 - GeneratingIndicator 숨기기
                 get().removeGeneratingTopicId(tempTopicId)
