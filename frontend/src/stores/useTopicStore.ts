@@ -496,22 +496,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             const realTopicId = plan.topic_id
             const messageStore = useMessageStore.getState()
 
-            try {
-                // 기존 메시지 및 아티팩트를 서버에서 가져와 표시합니다.
-                const messagesResponse = await messageApi.listMessages(realTopicId)
-                const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
-                const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
-                const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
-                messageStore.setMessages(realTopicId, serverMessages) // 실제 토픽 ID에 메시지 설정
-                messageStore.clearMessages(0) // 임시 토픽(0)의 메시지 제거
-            } catch (fetchError) {
-                console.error("Failed to fetch initial messages for realTopicId:", fetchError);
-                // 메시지 로딩 실패 시 에러 처리 (예: 사용자에게 알림)
-                // return { ok: false, error: 'FAILED_TO_LOAD_MESSAGES', topicId: realTopicId };
-            }
-
-            // AI 응답 대기 상태 설정 (GeneratingIndicator 표시)
-            get().addGeneratingTopicId(realTopicId) // 로딩 인디케이터를 실제 토픽 ID에 연결
+            // AI 응답 대기 상태 설정 (GeneratingIndicator 표시) - 즉시 표시!
+            get().addGeneratingTopicId(realTopicId)
 
             // 💡 Promise로 감싸서 최종 결과를 기다리도록 합니다. 외부 try...catch를 제거하고 Promise 내부에서 처리합니다.
             return new Promise(async (resolve) => {
@@ -523,6 +509,23 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                         isEdit,
                         isWebSearch: true
                     })
+
+                    // 1-1. isEdit=true일 때 임시 사용자 메시지를 즉시 UI에 추가 (서버에는 백그라운드로 저장 중)
+                    if (isEdit) {
+                        const userMessage: MessageModel = {
+                            id: undefined, // 임시 (SSE 완료 후 서버에서 실제 ID 가져옴)
+                            topicId: realTopicId,
+                            role: 'user',
+                            content: plan.plan,
+                            seqNo: undefined, // 임시
+                            createdAt: new Date().toISOString(),
+                            isPlan: false
+                        }
+
+                        // 기존 메시지에 추가
+                        const currentMessages = messageStore.getMessages(realTopicId)
+                        messageStore.setMessages(realTopicId, [...currentMessages, userMessage])
+                    }
 
                     // 2. 202 Accepted - 백그라운드에서 생성 중, SSE 시작
                     let isCompleted = false
