@@ -54,8 +54,10 @@ export interface AskResponse {
 
 // Plan API Request
 export interface PlanRequest {
-    template_id?: number
-    topic?: string
+    topic: string
+    isTemplateUsed: boolean
+    template_id: number | null
+    isWebSearch: boolean
 }
 
 // Plan API Response

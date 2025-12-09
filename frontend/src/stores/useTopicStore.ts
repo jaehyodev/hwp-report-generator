@@ -32,7 +32,8 @@ interface TopicStore {
     selectedTopicId: number | null
     selectedTemplateId: number | null // 선택된 토픽의 템플릿 ID
     selectedTemplate: Template | null // 선택된 템플릿 전체 정보
-    tempTopicIdCounter: number // 임시 topicId 카운터 (음수)
+    useTemplate: boolean // 대화 시작 전 템플릿 사용 여부
+    isTemplateSelected: boolean // 대화 시작 전 템플릿 선택 여부
 
     // State - 계획 생성
     plan: PlanResponse | null
@@ -55,15 +56,23 @@ interface TopicStore {
     setSelectedTopicId: (id: number | null, templateId?: number | null) => void
     setSelectedTemplateId: (id: number | null) => void
     setSelectedTemplate: (template: Template | null) => void
+    setUseTemplate: (value: boolean) => void
+    setIsTemplateSelected: (value: boolean) => void
     refreshTopic: (topicId: number) => Promise<void>
     updateTopicById: (topicId: number, data: TopicUpdate) => Promise<void>
     deleteTopicById: (topicId: number) => Promise<void>
     updateMessagesTopic: (oldTopicId: number, newTopicId: number) => void
 
     // Actions - 계획 생성
-    generatePlan: (templateId: number, topic: string) => Promise<void>
+    generatePlan: (
+        topic: string,
+        isTemplateUsed: boolean,
+        templateId: number | null, 
+        isWebSearch: boolean
+    ) => Promise<void>
     handleTopicPlanWithMessages: (
-        templateId: number,
+        isTemplateUsed: boolean,
+        templateId: number | null,
         userMessage: string,
         addMessages: (topicId: number, messages: MessageModel[]) => void
     ) => Promise<void>
@@ -97,7 +106,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
         selectedTopicId: null,
         selectedTemplateId: null,
         selectedTemplate: null,
-        tempTopicIdCounter: 0,
+        useTemplate: true,
+        isTemplateSelected: false,
 
         // 초기 상태 - 계획 생성
         plan: null,
@@ -249,6 +259,16 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             set({selectedTemplate: template})
         },
 
+        // 템플릿 사용 여부 설정
+        setUseTemplate: (value) => {
+            set({useTemplate: value})
+        },
+
+        // 템플릿 선택 여부 설정
+        setIsTemplateSelected: (value) => {
+            set({isTemplateSelected: value})
+        },
+
         // 특정 토픽 조회 (API 호출 + 양쪽 상태 업데이트)
         refreshTopic: async (topicId) => {
             try {
@@ -283,12 +303,18 @@ export const useTopicStore = create<TopicStore>((set, get) => {
         },
 
         // 보고서 작성 계획 생성
-        generatePlan: async (templateId, topic) => {
-            set({planLoading: true, planError: null})
+        generatePlan: async (topic, isTemplateUsed, templateId, isWebSearch) => {
+            set({
+                planLoading: true, 
+                planError: null
+            })
+            
             try {
                 const result = await topicApi.generateTopicPlan({
+                    topic: topic,
+                    isTemplateUsed: isTemplateUsed,
                     template_id: templateId,
-                    topic: topic
+                    isWebSearch: isWebSearch
                 })
 
                 set({
@@ -310,11 +336,13 @@ export const useTopicStore = create<TopicStore>((set, get) => {
         },
 
         // 보고서 계획 요청 + 메시지 관리
-        handleTopicPlanWithMessages: async (templateId, userMessage, addMessages) => {
+        handleTopicPlanWithMessages: async (isTemplateUsed, templateId, userMessage, addMessages) => {
             if (!userMessage.trim()) {
                 throw new Error('EMPTY_MESSAGE')
             }
 
+            const topic = userMessage.trim()
+            const isWebSearch = true // 임시 true
             const tempTopicId = 0 // 임시 topicId 고정
 
             // 1. 사용자 메시지를 UI에 표시
@@ -339,9 +367,9 @@ export const useTopicStore = create<TopicStore>((set, get) => {
 
             try {
                 // 3. 계획 생성 API 호출
-                await get().generatePlan(templateId, userMessage.trim())
+                await get().generatePlan(topic, isTemplateUsed, templateId, isWebSearch)
 
-                // 4. plan 상태에서 결과 가져와서 메시지로 추가
+                // 4. plan 상태에서 결과 가져와서 메시지로 추가,
                 const currentPlan = get().plan
                 if (currentPlan) {
                     // realTopicId는 나중에 generateReportFromPlan에서 사용됨
@@ -449,7 +477,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             if (!plan) {
                 // antdMessage.error('계획 정보가 없습니다.')
                 // topicId가 없으므로 -1 또는 0 사용
-                return { ok: false, error: 'NO_PLAN', topicId: -1 } 
+                return { ok: false, error: 'NO_PLAN', topicId: 0 } 
             }
 
             console.log('generateReportFromPlan >> plan >> ', plan)
@@ -469,7 +497,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                     await topicApi.generateTopicBackground(realTopicId, {
                         topic: plan.plan.split('\n')[0].replace('# ', '').replace(' 작성 계획', ''), // 첫 줄에서 주제 추출
                         plan: plan.plan,
-                        template_id: templateId
+                        isEdit: false
                     })
 
                     // 2. 202 Accepted - 백그라운드에서 생성 중, SSE 시작

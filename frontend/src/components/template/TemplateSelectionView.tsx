@@ -91,6 +91,8 @@ const TemplateSelectionView = ({onStartChat}: TemplateSelectionViewProps) => {
             }
             // store에 템플릿 정보 저장
             useTopicStore.getState().setSelectedTemplate(templateForStore)
+            // store에 템플릿 사용으로 저장
+            useTopicStore.getState().setIsTemplateSelected(true)
         }
 
         onStartChat(selectedTemplateId)

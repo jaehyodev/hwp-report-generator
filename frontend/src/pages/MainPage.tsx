@@ -31,6 +31,8 @@ const MainPage = () => {
         selectedTemplateId,
         setSelectedTopicId,
         setSelectedTemplateId,
+        useTemplate,
+        isTemplateSelected,
         sidebarTopics,
         handleTopicPlanWithMessages,
         generateReportFromPlan,
@@ -38,7 +40,8 @@ const MainPage = () => {
     } = useTopicStore()
 
     // 템플릿 선택 화면 표시 여부
-    const showTemplateSelection = selectedTopicId === null && selectedTemplateId === null
+    // - 토픽이 없어야함, 템플릿을 사용해야함, 템플릿이 선택이 안됨.
+    const showTemplateSelection = selectedTopicId === null && useTemplate === true && isTemplateSelected === false
 
     // 메시지 관리
     const {addMessages, setMessages, isDeletingMessage, loadMessages, refreshMessages} = useMessageStore()
@@ -225,13 +228,13 @@ const MainPage = () => {
         // 계획 모드 판단: selectedTopicId가 null(첫 시작) 또는 0(계획 생성 중)
         if (selectedTopicId === null || selectedTopicId === 0) {
             // 보고서 생성 이전인 계획 모드인 경우
-            const templateId = selectedTemplateId || 1
+            const templateId = selectedTemplateId || null
 
             // 새 plan 요청 시 버튼 표시 상태 리셋
             setShowOutlineButtons(true)
 
             // handleTopicPlanWithMessages 내부에서 isTopicPlan=true 설정됨
-            await handleTopicPlanWithMessages(templateId, message, addMessages)
+            await handleTopicPlanWithMessages(useTemplate, templateId, message, addMessages)
         } else {
             // 보고서 생성 요청 중 토스트 출력
             antdMessage.loading({
@@ -323,11 +326,8 @@ const MainPage = () => {
             if (prevTopicId === 0) {
                 messageStore.clearMessages(0)
             }
-
-            // 실제 토픽 메시지는 유지 (나중에 다시 볼 수 있음)
-            // 만약 완전히 지우고 싶다면: messageStore.clearMessages(prevTopicId)
         }
-
+        
         // 보고서 미리보기 닫기
         setSelectedReport(null)
 

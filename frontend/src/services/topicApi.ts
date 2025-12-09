@@ -19,7 +19,7 @@ interface GenerateTopicResponse {
 
 export const topicApi = {
     /**
-     * 토픽 생성 + AI 보고서 자동 생성
+     * 보고서 생성 - 미사용
      * POST /api/topics/generate
      * @param data 토픽 생성 데이터 (input_prompt, language)
      * @returns 토픽 ID와 생성된 MD 파일 경로
@@ -174,17 +174,17 @@ export const topicApi = {
      * @returns 보고서 작성 계획 (plan, sections)
      */
     generateTopicPlan: async (data: PlanRequest): Promise<PlanResponse> => {
-        console.log('generateTopicPlan > request data >', data)
+        console.log('/api/topics/plan >> request data >> ', data)
 
         const response = await api.post<ApiResponse<PlanResponse>>(API_ENDPOINTS.TOPIC_PLAN, data)
 
         if (!response.data.success || !response.data.data) {
-            console.log('generateTopicPlan > failed >', response.data)
+            console.log('/api/topics/plan >> failed >> ', response.data)
 
             throw new Error(response.data.error?.message || '보고서 계획 생성에 실패했습니다.')
         }
 
-        console.log('generateTopicPlan > success >', response.data)
+        console.log('/api/topics/plan >> success >> ', response.data)
 
         return response.data.data
     },
@@ -198,7 +198,7 @@ export const topicApi = {
      */
     generateTopicBackground: async (
         topicId: number,
-        data: {topic: string; plan: string; template_id?: number}
+        data: {topic: string; plan: string; isEdit: boolean;}
     ): Promise<{
         topic_id: number
         status: string
@@ -217,11 +217,11 @@ export const topicApi = {
         >(API_ENDPOINTS.GENERATE_TOPIC_BACKGROUND(topicId), data)
 
         if (!response.data.success || !response.data.data) {
-            console.log('generateTopicBackground > failed >', response.data)
+            console.log('generateTopicBackground >> failed >> response.data: ', response.data)
             throw new Error(response.data.error?.message || '보고서 생성 요청에 실패했습니다.')
         }
 
-        console.log('generateTopicBackground > success >', response.data)
+        console.log('generateTopicBackground >> success >> response.data: ', response.data)
         return response.data.data
     },
 

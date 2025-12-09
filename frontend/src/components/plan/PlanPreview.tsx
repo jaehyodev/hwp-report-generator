@@ -1,4 +1,4 @@
-import React, {useState} from 'react'
+import {useState} from 'react'
 import {CloseOutlined} from '@ant-design/icons'
 import styles from './PlanPreview.module.css'
 

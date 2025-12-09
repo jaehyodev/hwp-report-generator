@@ -9,7 +9,8 @@ import {
     SafetyOutlined,
     SettingOutlined,
     LogoutOutlined,
-    FileOutlined
+    FileOutlined,
+    ThunderboltOutlined
 } from '@ant-design/icons'
 import {Dropdown} from 'antd'
 import type {MenuProps} from 'antd'
@@ -29,14 +30,28 @@ interface SidebarProps {
     onNewTopic: () => void
 }
 
-const Sidebar: React.FC<SidebarProps> = ({isOpen, onToggle, onTopicSelect, onNewTopic}) => {
+const Sidebar = ({isOpen, onToggle, onTopicSelect, onNewTopic}: SidebarProps) => {
     const {antdMessage} = useMessage()
     const {user, logout} = useAuth()
     const navigate = useNavigate()
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
 
+
     // Use Zustand store for topic management - Sidebar용 상태만 사용
     const {sidebarTopics, sidebarLoading, selectedTopicId, loadSidebarTopics} = useTopicStore()
+    const setUseTemplate = useTopicStore(state => state.setUseTemplate)
+
+    // 템플릿을 사용하여 쓰레드 시작
+    const handleTemplateNewTopic = () => {
+        setUseTemplate(true)
+        onNewTopic()
+    }
+    
+    // 템플릿 없이 쓰레드 시작
+    const handleQuickNewTopic = () => {
+        setUseTemplate(false)
+        onNewTopic()
+    }
 
     // 초기 로드 - Sidebar용 토픽 로드 (항상 첫 페이지)
     useEffect(() => {
@@ -143,12 +158,20 @@ const Sidebar: React.FC<SidebarProps> = ({isOpen, onToggle, onTopicSelect, onNew
                         </button>
                     </div>
                     <div className={styles.collapsedContent}>
-                        <button className={styles.iconBtn} onClick={onNewTopic} title="새로운 주제">
+                        {/* + 버튼 새로운 주제 (템플릿 사용) */}
+                        <button className={styles.iconBtn} onClick={handleTemplateNewTopic} title="새로운 주제">
                             <div className={styles.plusCircle}>
                                 <PlusOutlined />
                             </div>
                         </button>
+                        {/* 번개 버튼 새로운 주제 (템플릿 없이) */}
+                        <button className={styles.iconBtn} onClick={handleQuickNewTopic} title="빠른 보고서 생성">
+                            <div className={styles.plusCircle}>
+                                <ThunderboltOutlined />
+                            </div>
+                        </button>
                     </div>
+                    
 
                     {/* Bottom Menu - Collapsed */}
                     <div className={styles.bottomMenu}>
@@ -170,20 +193,29 @@ const Sidebar: React.FC<SidebarProps> = ({isOpen, onToggle, onTopicSelect, onNew
                             <VerticalRightOutlined />
                         </button>
                         <div>
-                            <button className={styles.title} onClick={onNewTopic}>
+                            <button className={styles.title} onClick={handleTemplateNewTopic}>
                                 HWP 보고서 자동 생성 시스템
                             </button>
                         </div>
                     </div>
                     <div className={styles.sidebarContent}>
-                        {/* + 버튼 새로운 주제 */}
-                        <button className={styles.newTopicBtn} onClick={onNewTopic} title="새로운 주제">
+                        {/* + 버튼 새로운 주제 (템플릿 사용) */}
+                        <button className={styles.newTopicBtn} onClick={handleTemplateNewTopic} title="새로운 주제">
                             <div className={styles.plusIcon}>
                                 <div className={styles.plusCircle}>
                                     <PlusOutlined />
                                 </div>
                             </div>
                             <span>새로운 주제</span>
+                        </button>
+                        {/* 번개 버튼 새로운 주제 (템플릿 없이) */}
+                        <button className={styles.newTopicBtn} onClick={handleQuickNewTopic} title="빠른 보고서 생성">
+                            <div className={styles.plusIcon}>
+                                <div className={styles.plusCircle}>
+                                    <ThunderboltOutlined />
+                                </div>
+                            </div>
+                            <span>빠른 보고서 생성</span>
                         </button>
 
                         {/* 최근 항목 */}
