@@ -46,37 +46,10 @@ export interface AskRequest {
 // Ask API Response
 export interface AskResponse {
     topic_id: number
-    user_message: {
-        id: number
-        topic_id: number
-        role: string
-        content: string
-        seq_no: number
-        created_at: string
-    }
-    assistant_message: {
-        id: number
-        topic_id: number
-        role: string
-        content: string
-        seq_no: number
-        created_at: string
-    }
-    artifact: {
-        id: number
-        kind: string
-        filename: string
-        file_path: string
-        file_size: number
-        version: number
-        created_at: string
-    }
-    usage: {
-        model: string
-        input_tokens: number
-        output_tokens: number
-        latency_ms: number
-    }
+    status: string // 'answering'
+    message: string
+    status_check_url: string
+    stream_url: string
 }
 
 // Plan API Request

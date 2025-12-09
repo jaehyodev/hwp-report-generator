@@ -233,8 +233,25 @@ const MainPage = () => {
             // handleTopicPlanWithMessages 내부에서 isTopicPlan=true 설정됨
             await handleTopicPlanWithMessages(templateId, message, addMessages)
         } else {
+            // 보고서 생성 요청 중 토스트 출력
+            antdMessage.loading({
+                content: TOAST_MESSAGES.REPORT_GENERATING,
+                key: `generate-${selectedTopicId}`,
+                duration: 0
+            })
+            
             // 보고서 생성 이후로 토픽이 만들어진 이후인 경우, 메시지 전송
-            await sendMessage(message, files, webSearchEnabled)
+            const result = await sendMessage(message, files, webSearchEnabled)
+            
+            // 보고서 생성 요청 중 토스트 제거
+            antdMessage.destroy(`generate-${selectedTopicId}`)
+            
+            if (result.ok) {
+            // 보고서 생성 완료 토스트 출력
+            antdMessage.success(TOAST_MESSAGES.REPORT_SUCCESS);
+            } else {
+                antdMessage.error(TOAST_MESSAGES.REPORT_FAILED)
+            }
         }
     }
 

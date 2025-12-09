@@ -148,21 +148,21 @@ export const topicApi = {
      * POST /api/topics/{topicId}/ask
      * @param topicId 토픽 ID
      * @param data Ask 요청 데이터
-     * @returns Ask 응답 (user/assistant 메시지, artifact, usage)
+     * @returns AskResponse
      */
-    askTopic: async (topicId: number, data: AskRequest): Promise<AskResponse> => {
+    ask: async (topicId: number, data: AskRequest): Promise<AskResponse> => {
         // 요청 데이터 확인
-        console.log('askTopic > request >', topicId, data)
+        console.log('ask >> request >> ', topicId, data)
 
-        const response = await api.post<ApiResponse<AskResponse>>(API_ENDPOINTS.ASK_TOPIC(topicId), data)
+        const response = await api.post<ApiResponse<AskResponse>>(API_ENDPOINTS.ASK(topicId), data)
 
         if (!response.data.success || !response.data.data) {
-            console.log('askTopic > failed >', response.data)
+            console.log('ask >> failed >> response.data: ', response.data)
 
             throw new Error(response.data.error?.message || '질문 전송에 실패했습니다.')
         }
 
-        console.log('askTopic > success >', response.data)
+        console.log('ask >> success >> response.data: ', response.data)
 
         return response.data.data
     },

@@ -25,6 +25,7 @@ interface UseChatActionsOptions {
 interface SendMessageResult {
     ok: boolean
     error?: string // 에러 코드 (TOAST_MESSAGES 키)
+    topicId?: number
 }
 
 interface DeleteMessageResult {
@@ -47,67 +48,119 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, refreshMess
 
         const messageStore = useMessageStore.getState()
         const topicStore = useTopicStore.getState() 
-        topicStore.addGeneratingTopicId(selectedTopicId) // 메시지 생성 중인 쓰레드 목록에 쓰레드 추가
+        
+        //topicStore.addGeneratingTopicId(selectedTopicId) // 메시지 생성 중인 쓰레드 목록에 쓰레드 추가
 
-        try {
-            // 보고서 생성 이후 메시지 체이닝 (ask API) (selectedTopicId는 number 타입이 보장됨)
+        topicStore.addGeneratingTopicId(selectedTopicId)
 
-            // 임시 사용자 메시지 생성 - UI에 즉시 표시용
-            const userMessage: MessageModel = {
-                id: undefined, // 임시 메시지 표시 - 서버 응답 후 메시지를 제거 후, 새로 추가
-                topicId: selectedTopicId,
-                role: 'user',
-                content: message.trim(),
-                seqNo: undefined,
-                createdAt: new Date().toISOString(),
-                isPlan: false
-            }
+        // 보고서 생성 이후 메시지 체이닝
 
-            // UI에 즉시 표시 (사용자 경험 향상)
-            messageStore.addMessages(selectedTopicId, [userMessage])
-
-            /*  선택된 참조 보고서 (미사용)
-                let selectedArtifactId = getSelectedArtifactId(selectedTopicId)
-
-                // 참조 보고서 선택: 선택된 아티팩트가 없으면 자동으로 최신 선택 (MD 파일만)
-                if (!selectedArtifactId) {
-                    const artifacts = await loadArtifacts(selectedTopicId)
-                    const markdownArtifacts = artifacts.filter((art) => art.kind === 'md')
-                    if (markdownArtifacts.length > 0) {
-                        autoSelectLatest(selectedTopicId, markdownArtifacts)
-                        selectedArtifactId = getSelectedArtifactId(selectedTopicId)
-                    }
-                }
-            */
-
-            // 서버에 사용자 메시지 전달 (응답은 현재 미사용)
-            await topicApi.askTopic(selectedTopicId, {
-                content: message,
-                artifact_id: null, // 참조 보고서 미사용으로 현재는 서버에서 가장 최신 md 파일 참조
-                include_artifact_content: true
-            })
-
-            // 서버에서 새 메시지 가져와 병합 (임시 사용자 메시지는 제거 후, 서버의 정식 메시지로 추가)
-            await messageStore.mergeNewMessages(selectedTopicId)
-
-            /*
-                참조 보고서 미사용
-                // Artifact 갱신
-                const refreshedArtifacts: Artifact[] = await refreshArtifacts(selectedTopicId)
-
-                // 새로운 MD 파일이 생성되므로 참조 보고서를 최신 MD 파일로 선택
-                autoSelectLatest(selectedTopicId, refreshedArtifacts)
-            */
-            return { ok: true }
-        } catch (error: any) {
-            console.error('Error sending message:', error)
-            // 서버 에러 메시지가 있으면 전달, 없으면 기본 코드 전달
-            const serverMessage = error.response?.data?.detail || error.response?.data?.error?.message
-            return { ok: false, error: serverMessage || 'MESSAGE_SEND_FAILED' }
-        } finally {
-            // 메시지가 전송 된 후, 메시지 생성 중인 쓰레드 목록에서 현재 쓰레드 제거
-            useTopicStore.getState().removeGeneratingTopicId(selectedTopicId)
+        // 임시 사용자 메시지 생성 - UI에 즉시 표시용
+        const userMessage: MessageModel = {
+            id: undefined, // 임시 메시지 표시 - 서버 응답 후 메시지를 제거 후, 새로 추가
+            topicId: selectedTopicId,
+            role: 'user',
+            content: message.trim(),
+            seqNo: undefined,
+            createdAt: new Date().toISOString(),
+            isPlan: false
         }
+
+        // UI에 즉시 표시 (사용자 경험 향상)
+        messageStore.addMessages(selectedTopicId, [userMessage])
+
+        /*  선택된 참조 보고서 (미사용)
+            let selectedArtifactId = getSelectedArtifactId(selectedTopicId)
+
+            // 참조 보고서 선택: 선택된 아티팩트가 없으면 자동으로 최신 선택 (MD 파일만)
+            if (!selectedArtifactId) {
+                const artifacts = await loadArtifacts(selectedTopicId)
+                const markdownArtifacts = artifacts.filter((art) => art.kind === 'md')
+                if (markdownArtifacts.length > 0) {
+                    autoSelectLatest(selectedTopicId, markdownArtifacts)
+                    selectedArtifactId = getSelectedArtifactId(selectedTopicId)
+                }
+            }
+        */
+        
+        return new Promise(async (resolve) => {
+            try {
+                // 2. 서버에 사용자 메시지 전달
+                const startData = await topicApi.ask(selectedTopicId, {
+                    content: message,
+                    artifact_id: null, // 참조 보고서 미사용으로 현재는 서버에서 가장 최신 md 파일 참조
+                    include_artifact_content: true
+                })
+
+                // 3. SSE 스트림 시작 및 데이터 처리
+                let isCompleted = false
+
+                const unsubscribe = topicApi.getGenerationStatusStream(
+                    selectedTopicId,
+                    async (status) => {
+                        if (isCompleted) return
+
+                        if (status.status === 'completed') {
+                            isCompleted = true
+                            unsubscribe()
+
+                            // 4. SSE 완료
+                            // - 서버에서 새 메시지 가져와 병합 (임시 사용자 메시지는 제거 후, 서버의 정식 메시지로 추가)
+                            await messageStore.mergeNewMessages(selectedTopicId)
+                            
+                            // 메시지가 전송 된 후, 메시지 생성 중인 쓰레드 목록에서 현재 쓰레드 제거
+                            useTopicStore.getState().removeGeneratingTopicId(selectedTopicId)
+
+                            // ✅ Promise resolve: 성공 상태 반환
+                            resolve({ ok: true, topicId: selectedTopicId})
+                        } else if (status.status === 'failed') {
+                            isCompleted = true
+                            unsubscribe()
+
+                            // 메시지가 전송 된 후, 메시지 생성 중인 쓰레드 목록에서 현재 쓰레드 제거
+                            useTopicStore.getState().removeGeneratingTopicId(selectedTopicId)
+
+                            // ✅ Promise resolve: 실패 상태 반환
+                            resolve({ ok: false, error: status.error_message || '메시지 생성 실패', topicId: selectedTopicId })
+                        }
+                    },
+                    // SSE 에러 핸들러
+                    (error) => {
+                        if (isCompleted) return
+                        isCompleted = true
+
+                        unsubscribe()
+                        console.error('SSE error:', error)
+                        
+                        // 메시지가 전송 된 후, 메시지 생성 중인 쓰레드 목록에서 현재 쓰레드 제거
+                        useTopicStore.getState().removeGeneratingTopicId(selectedTopicId)
+
+                        // ✅ Promise resolve: 에러 상태 반환
+                        resolve({ ok: false, error: error, topicId: selectedTopicId})
+                    }
+                )
+
+                /*  참조 보고서 미사용
+                    // Artifact 갱신
+                    const refreshedArtifacts: Artifact[] = await refreshArtifacts(selectedTopicId)
+
+                    // 새로운 MD 파일이 생성되므로 참조 보고서를 최신 MD 파일로 선택
+                    autoSelectLatest(selectedTopicId, refreshedArtifacts)
+                */
+            } catch (error: any) {
+                console.error('Error sending message:', error)
+
+                // 메시지가 전송 된 후, 메시지 생성 중인 쓰레드 목록에서 현재 쓰레드 제거
+                useTopicStore.getState().removeGeneratingTopicId(selectedTopicId)
+                
+                // 서버 에러 메시지가 있으면 전달, 없으면 기본 코드 전달
+                const serverMessage = error.response?.data?.detail || error.response?.data?.error?.message
+                // ✅ Promise resolve: 실패 상태 반환
+                resolve({ ok: false, error: serverMessage || 'MESSAGE_SEND_FAILED', topicId: selectedTopicId })
+            } finally {
+                
+            }
+        })
     }
 
     /**
