@@ -1005,6 +1005,61 @@ markdown = await asyncio.to_thread(
 
 ---
 
-**마지막 업데이트:** 2025-12-08
-**버전:** 2.12.0
-**상태:** ✅ 관리자 비밀번호 자동 동기화 완성
+### v2.13 (2025-12-09) - POST /api/topics/:topic_id/generate에 isEdit 파라미터 추가
+
+✅ **isEdit 파라미터 신규 추가**
+- GenerateRequest에 `is_edit` 필드 추가 (선택사항, 기본값: false, camelCase alias: isEdit)
+- `isEdit=false` → 기존 로직 그대로 수행 (메시지 저장 안함)
+- `isEdit=true` → messages DB에 plan 저장 (role: user) 후 기존 로직 수행
+- Step 0.6에서 조건부로 plan을 messages DB에 저장
+
+✅ **메시지 저장 로직 (Step 0.6)**
+- 위치: `_background_generate_report()` 함수, Claude API 호출 전
+- 저장 데이터: `MessageCreate(role=MessageRole.USER, content=plan)`
+- 저장 성공 시: seq_no, created_at 자동 생성
+- 저장 실패 시: Exception 발생 → artifact.status="failed" → 사용자 알림
+
+✅ **테스트 완료 (13/13 모두 통과)**
+- TC-001: isEdit=false (기본값) - 메시지 저장 안함
+- TC-002: isEdit=true - messages DB에 저장
+- TC-003: isEdit 생략 - 기본값 false 적용
+- TC-004: isEdit=true 후 기존 로직 계속 실행
+- TC-005: 긴 plan (50,000 chars) 처리
+- TC-006: DB 저장 실패 - artifact.status=failed
+- TC-007: seq_no 자동 증가 확인
+- TC-008: API 유효 요청 - 202 Accepted
+- TC-009: isEdit 타입 오류 - 422 Validation
+- TC-010: 권한 없음 - 401 Unauthorized
+- TC-011: isEdit 파라미터 선택사항 (하위 호환성)
+- TC-012: 기존 필드 변경 없음
+- TC-013: API 응답 형식 변경 없음
+
+✅ **하위 호환성 100% 유지**
+- isEdit 필드는 선택사항 (기본값: false)
+- API 응답 형식 변경 없음
+- 기존 클라이언트 영향도 없음
+
+✅ **구현 파일**
+- backend/app/models/topic.py: GenerateRequest에 is_edit 필드 추가
+- backend/app/routers/topics.py: generate_report_background() 함수 수정 (is_edit 전달)
+- backend/app/routers/topics.py: _background_generate_report() 함수 수정 (Step 0.6 추가)
+- backend/tests/test_api_topics_generate_isEdit.py: 신규 테스트 파일 (13개 TC)
+
+### 주요 개선 효과
+
+| 항목 | 이전 | 이후 | 개선 |
+|------|------|------|------|
+| **메시지 저장** | API 호출만 | isEdit 조건부 | 사용자 선택 |
+| **대화 스레드** | plan 별도 저장 불가 | messages DB에 기록 | 자연스러운 UX |
+| **이력 추적** | 없음 | seq_no 기반 순서 | 변경사항 추적 |
+| **하위 호환성** | N/A | 100% 유지 | 기존 코드 영향 없음 |
+
+### Unit Spec
+- 파일: `backend/doc/specs/20251209_api_topics_generate_isEdit.md`
+- 17개 섹션: 요구사항, 파일 목록, 흐름도, 10개 TC, 에러 처리, 기술선택, 가정사항, 체크리스트
+
+---
+
+**마지막 업데이트:** 2025-12-09
+**버전:** 2.13.0
+**상태:** ✅ isEdit 파라미터 추가 및 메시지 저장 완성

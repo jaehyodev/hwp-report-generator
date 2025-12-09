@@ -205,9 +205,16 @@ class GenerateRequest(BaseModel):
     Attributes:
         topic: 보고서 주제 (필수)
         plan: Sequential Planning에서 받은 계획 (필수)
+        is_edit: messages DB에 plan 저장 여부 (선택, 기본값: false)
+        is_web_search: 웹 검색 도구 사용 여부 (기본값: false)
     """
     topic: str = Field(..., min_length=1, max_length=200, description="보고서 주제")
     plan: str = Field(..., min_length=1, description="Sequential Planning에서 받은 계획")
+    is_edit: bool = Field(
+        default=False,
+        alias="isEdit",
+        description="messages DB에 plan 저장 여부 (기본값: false)"
+    )
     is_web_search: bool = Field(
         default=False,
         alias="isWebSearch",
@@ -220,6 +227,7 @@ class GenerateRequest(BaseModel):
             "example": {
                 "topic": "AI 시장 분석",
                 "plan": "# 보고서 계획\n## 개요\n...",
+                "isEdit": True,
                 "isWebSearch": True
             }
         }

@@ -1175,6 +1175,40 @@ async def plan_report(
             logger.info(f"[PLAN] Topic rolled back - topic_id={topic.id}")
             raise
 
+        # === Step 2.5: 메시지 저장 (user + assistant) ===
+        try:
+            logger.info(f"[PLAN] Saving messages - topic_id={topic.id}")
+
+            # Step 2.5.1: plan_result["plan"] 유효성 검증
+            plan_text = plan_result.get("plan", "").strip()
+            if not plan_text:
+                raise ValueError("계획 내용이 비어있습니다.")
+
+            # Step 2.5.2: User 메시지 저장
+            user_msg = MessageDB.create_message(
+                topic.id,
+                MessageCreate(role=MessageRole.USER, content=request.topic)
+            )
+            logger.info(f"[PLAN] User message saved - topic_id={topic.id}, message_id={user_msg.id}, seq_no={user_msg.seq_no}")
+
+            # Step 2.5.3: Assistant 메시지 저장
+            assistant_msg = MessageDB.create_message(
+                topic.id,
+                MessageCreate(role=MessageRole.ASSISTANT, content=plan_text)
+            )
+            logger.info(f"[PLAN] Assistant message saved - topic_id={topic.id}, message_id={assistant_msg.id}, seq_no={assistant_msg.seq_no}")
+
+        except Exception as msg_error:
+            logger.error(f"[PLAN] Message save failed - topic_id={topic.id}, error={str(msg_error)}", exc_info=True)
+            TopicDB.delete_topic(topic.id)
+            logger.info(f"[PLAN] Topic rolled back - topic_id={topic.id}")
+            return error_response(
+                code=ErrorCode.SERVER_INTERNAL_ERROR,
+                http_status=500,
+                message="대화 저장 중 오류가 발생했습니다.",
+                details={"error": str(msg_error)}
+            )
+
         # Step 3. isTemplateUsed 값에 따른 조건부 prompt 저장
         if request.is_template_used:
             # 템플릿 기반 경로: Template의 prompt 정보 저장
@@ -1380,6 +1414,7 @@ async def generate_report_background(
                 artifact_id=artifact.id,
                 topic=request.topic,
                 plan=request.plan,
+                is_edit=request.is_edit,  # ✅ NEW: isEdit 파라미터 추가
                 template_id=template_id,
                 user_id=current_user.id,
                 is_web_search=request.is_web_search
@@ -1889,6 +1924,7 @@ async def _background_generate_report(
     artifact_id: int,
     topic: str,
     plan: str,
+    is_edit: bool,  # ✅ NEW: Plan 저장 여부
     template_id: Optional[int],
     user_id: str,
     is_web_search: bool = False
@@ -1903,6 +1939,7 @@ async def _background_generate_report(
         artifact_id: Artifact ID (상태 업데이트용)
         topic: 보고서 주제
         plan: Sequential Planning에서 받은 계획
+        is_edit: messages DB에 plan 저장 여부 (True일 때 저장)
         template_id: 템플릿 ID (source_type='template'일 때 필수, 'basic'일 때 선택)
         user_id: 사용자 ID
         is_web_search: Claude 웹 검색 활성화 여부
@@ -1932,6 +1969,21 @@ async def _background_generate_report(
 
         # === Step 0.5: JSON 섹션 스키마 생성 (새로운 단계) ===
         section_schema = await _build_section_schema(topic_obj.source_type, topic_obj.template_id)
+
+        # === Step 0.6: ✅ NEW - isEdit=true일 때 plan을 messages DB에 저장 ===
+        if is_edit:
+            try:
+                logger.info(f"[BACKGROUND] Saving plan to messages DB - topic_id={topic_id}, is_edit={is_edit}")
+                user_message = await asyncio.to_thread(
+                    MessageDB.create_message,
+                    topic_id,
+                    MessageCreate(role=MessageRole.USER, content=plan)
+                )
+                logger.info(f"[BACKGROUND] Plan saved to messages DB - message_id={user_message.id}, seq_no={user_message.seq_no}")
+            except Exception as e:
+                # ✅ 메시지 저장 실패 시 Exception 발생 (artifact.status=failed로 처리)
+                logger.error(f"[BACKGROUND] Failed to save plan to messages DB - error={str(e)}", exc_info=True)
+                raise  # Exception을 re-raise하여 task 실패 처리
 
         # === Step 1: 진행 상태 업데이트 ===
         logger.info(f"[BACKGROUND] Preparing content - topic_id={topic_id}")

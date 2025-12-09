@@ -390,11 +390,12 @@ Output: "1. 배경\n내용\n2. 주요내용"
 
 ```
 
-### Workflow 4: Sequential Planning (POST /plan, NEW in v2.4)
+### Workflow 4: Sequential Planning with Message Persistence (POST /plan, v2.4→v2.12)
 
 ```
 Step 1: Load Topic Context
   ✓ Verify topic_id and ownership
+  ✓ Create topic if new
 
 Step 2: Get Template Instructions (if applicable)
   ✓ Load template prompt_system
@@ -404,12 +405,24 @@ Step 3: Sequential Planning API Call
   ✓ Use sequential_planning.py to generate step-by-step plan
   ✓ Response: Markdown with numbered steps and sections
 
+Step 2.5: Save Plan Messages to DB (NEW in v2.12)
+  ✓ Validate plan_result["plan"] is non-empty
+  ✓ Save User message (role=user, content=request.topic)
+  ✓ Save Assistant message (role=assistant, content=plan_result["plan"])
+  ✓ seq_no auto-incremented (1, 2, ...)
+  ✓ On error: Delete topic (rollback) → HTTP 500 ERROR
+
 Step 4: Parse Planning Output
   ✓ Extract section list from plan
   ✓ Structure: [{"title": "...", "content": "..."}]
 
-Step 5: Response
-  ✓ Return: plan (Markdown), sections (list)
+Step 5: Conditional Prompt Saving (Template/Optimization)
+  ✓ If isTemplateUsed=true: Load template prompts → save to topic
+  ✓ If isTemplateUsed=false: Load latest prompt optimization → save to topic
+  ✓ Non-blocking: Log warnings if save fails
+
+Step 6: Response
+  ✓ Return: plan (Markdown), topic_id
   ✓ Response time: < 2 seconds
   ✓ HTTP 200 OK
 ```
@@ -2099,18 +2112,26 @@ def fallback_parse_markdown(md_text: str) -> dict:
 
 ---
 
-**Last Updated:** November 13, 2025
-**Version:** 2.5.0
+**Last Updated:** December 9, 2025
+**Version:** 2.12.0
 **Effective Date:** Immediately
 
-**Recent Session Notes (2025-11-11):**
+**Recent Session Notes (2025-12-09):**
+- ✅ v2.12: POST /api/topics/plan Message Persistence Feature
+  - User & Assistant messages saved to DB during plan generation
+  - Blocking error handling: Topic rollback on message save failure
+  - Response: HTTP 500 ERROR if messages cannot be persisted
+  - 11/11 unit tests passing (100% coverage)
+  - Spec: `backend/doc/specs/20251209_api_topics_plan_message_persistence.md`
+
+**Previous Session Notes (2025-11-13):**
 - ✅ Test Environment Setup documentation added
 - ✅ Python interpreter configuration details (backend/.venv/bin/python)
 - ✅ Claude Code Testing Checklist with verification steps
 - ✅ Common issues & solutions troubleshooting table
 - ✅ Package manager (uv) configuration guidelines
 
-**Previous Session Notes (2025-11-10):**
+**Earlier Session Notes (2025-11-10):**
 - ✅ Comprehensive backend architecture documentation
 - ✅ Added core functions with 9, 12, and 9-step flows
 - ✅ Documented all E2E workflows (2 scenarios)
