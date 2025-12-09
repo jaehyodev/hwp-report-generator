@@ -1,6 +1,6 @@
 import {useState, useRef, useEffect, useLayoutEffect} from 'react'
 import {MenuOutlined} from '@ant-design/icons'
-import {useMessage} from '../contexts/MessageContext'
+import {useMessage} from '@/contexts/MessageContext'
 import {TOAST_MESSAGES} from '../constants'
 import {OutlineMessage} from '../components/chat/OutlineMessage'
 import ChatMessage from '../components/chat/ChatMessage'
@@ -85,8 +85,8 @@ const MainPage = () => {
             duration: 0
         })
 
-        // 보고서 생성 중 에러 발생 시 다시 보고서 생성하시겠습니까 버튼 활성화.
-        const result = await generateReportFromPlan()
+        // 보고서 생성 중 에러 발생 시 다시 보고서 생성하시겠습니까 버튼 활성화. (메시지에서 바로 생성 시에는 수정을 적용하지 않으므로 false를 대입합니다.)
+        const result = await generateReportFromPlan(false)
 
         // 보고서 생성 요청 중 토스트 제거
         antdMessage.destroy(`generate-${plan?.topic_id}`)
@@ -127,7 +127,7 @@ const MainPage = () => {
     /**
      * PlanPreview "보고서 생성" 버튼 클릭 → 편집된 plan으로 보고서 생성
      */
-    const handleGenerateFromEditedPlan = async (editedPlan: string) => {
+    const handleGenerateFromEditedPlan = async (isEdit:boolean, editedPlan: string) => {
         // 1. plan 상태 업데이트
         const {updatePlan} = useTopicStore.getState()
         updatePlan(editedPlan)
@@ -138,8 +138,26 @@ const MainPage = () => {
         // 3. OutlineMessage 버튼 숨기기
         setShowOutlineButtons(false)
 
+        // 보고서 생성 요청 중 토스트 출력
+        antdMessage.loading({
+            content: TOAST_MESSAGES.REPORT_GENERATING,
+            key: `generate-${plan?.topic_id}`,
+            duration: 0
+        })
+
         // 4. 편집된 plan으로 보고서 생성
-        await generateReportFromPlan()
+        const result = await generateReportFromPlan(isEdit)
+
+        // 보고서 생성 요청 중 토스트 제거
+        antdMessage.destroy(`generate-${plan?.topic_id}`)
+
+        if (result.ok) {
+            // 보고서 생성 완료 토스트 출력
+            antdMessage.success(TOAST_MESSAGES.REPORT_SUCCESS);
+        } else {
+            antdMessage.error(TOAST_MESSAGES.REPORT_FAILED)
+            setShowOutlineButtons(true)
+        }
     }
 
     /**

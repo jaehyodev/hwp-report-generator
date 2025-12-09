@@ -80,7 +80,7 @@ interface TopicStore {
     clearPlan: () => void
 
     // Actions - 보고서 생성
-    generateReportFromPlan: () => Promise<{ ok: boolean, error?: any, topicId: number}>
+    generateReportFromPlan: (isEdit: boolean) => Promise<{ ok: boolean, error?: any, topicId: number}>
 
     // Actions - 생성 상태 관리
     addGeneratingTopicId: (topicId: number) => void
@@ -113,6 +113,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
         plan: null,
         planLoading: false,
         planError: null,
+        isPlanEditByTopic: new Map<number, boolean>(),
 
         // 초기 상태 - AI 응답 생성 중인 토픽 ID 목록
         messageGeneratingTopicIds: new Set(),
@@ -313,7 +314,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                 const result = await topicApi.generateTopicPlan({
                     topic: topic,
                     isTemplateUsed: isTemplateUsed,
-                    template_id: templateId,
+                    template_id: templateId || 1,
                     isWebSearch: isWebSearch
                 })
 
@@ -470,20 +471,17 @@ export const useTopicStore = create<TopicStore>((set, get) => {
          * 계획 기반 보고서 생성
          * "예" 클릭 시 호출 - 백그라운드에서 실제 보고서 생성
          */
-        generateReportFromPlan: async () => {
+        generateReportFromPlan: async (isEdit: boolean) => {
             const state = get()
-            const { plan, selectedTemplateId } = state
+            const { plan } = state
 
             if (!plan) {
                 // antdMessage.error('계획 정보가 없습니다.')
-                // topicId가 없으므로 -1 또는 0 사용
+                // topicId가 없으므로 0 사용
                 return { ok: false, error: 'NO_PLAN', topicId: 0 } 
             }
 
-            console.log('generateReportFromPlan >> plan >> ', plan)
-
             const realTopicId = plan.topic_id
-            const templateId = selectedTemplateId || 1 // 선택된 템플릿 ID 사용, fallback: 1
             const messageStore = useMessageStore.getState()
 
             // AI 응답 대기 상태 설정 (GeneratingIndicator 표시)
@@ -497,7 +495,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                     await topicApi.generateTopicBackground(realTopicId, {
                         topic: plan.plan.split('\n')[0].replace('# ', '').replace(' 작성 계획', ''), // 첫 줄에서 주제 추출
                         plan: plan.plan,
-                        isEdit: false
+                        isEdit,
+                        isWebSearch: true
                     })
 
                     // 2. 202 Accepted - 백그라운드에서 생성 중, SSE 시작
@@ -522,22 +521,11 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 unsubscribe()
 
                                 // 3. 완료 시 데이터 병합 및 상태 업데이트 로직
-                                const planMessages = messageStore.getMessages(0)
                                 const messagesResponse = await messageApi.listMessages(realTopicId)
                                 const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
                                 const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
                                 const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
-                                const updatedPlanMessages = planMessages.map((msg) => ({
-                                    ...msg,
-                                    topicId: realTopicId
-                                }))  
-                                const planMessageIds = new Set(updatedPlanMessages.filter((m) => m.id).map((m) => m.id))
-                                const newServerMessages = serverMessages.filter((m: MessageModel) => {
-                                    if (!m.id) return true
-                                    return !planMessageIds.has(m.id)
-                                })
-                                const mergedMessages = [...updatedPlanMessages, ...newServerMessages]
-                                messageStore.setMessages(realTopicId, mergedMessages)
+                                messageStore.setMessages(realTopicId, serverMessages)
                                 messageStore.clearMessages(0)
 
                                 try {

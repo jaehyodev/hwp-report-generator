@@ -1,7 +1,7 @@
 import api from './api'
 import {API_BASE_URL, API_ENDPOINTS} from '@/constants/'
-import type {TopicCreate, TopicUpdate, Topic, TopicListResponse, AskRequest, AskResponse, PlanRequest, PlanResponse, TopicGenerationStatus} from '../types/topic'
-import type {ApiResponse} from '../types/api'
+import type {TopicCreate, TopicUpdate, Topic, TopicListResponse, AskRequest, AskResponse, PlanRequest, PlanResponse, TopicGenerationStatus, GenerateTopicBackgroundRequest} from '@/types/topic'
+import type {ApiResponse} from '@/types/api'
 import { storage } from '@/utils/storage'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 
@@ -193,12 +193,12 @@ export const topicApi = {
      * 백그라운드 보고서 생성 (v2.4+)
      * POST /api/topics/:topicId/generate
      * @param topicId 토픽 ID
-     * @param data 생성 요청 데이터 (topic, plan, template_id)
+     * @param data
      * @returns 생성 상태 정보 (202 Accepted)
      */
     generateTopicBackground: async (
         topicId: number,
-        data: {topic: string; plan: string; isEdit: boolean;}
+        data: GenerateTopicBackgroundRequest
     ): Promise<{
         topic_id: number
         status: string

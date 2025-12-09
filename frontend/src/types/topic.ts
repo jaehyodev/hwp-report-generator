@@ -83,3 +83,11 @@ export interface TopicGenerationStatus {
     completed_at?: string
     error_message?: string
 }
+
+// 백그라운드 보고서 요청
+export interface GenerateTopicBackgroundRequest {
+    topic: string
+    plan: string
+    isEdit: boolean
+    isWebSearch: boolean
+}

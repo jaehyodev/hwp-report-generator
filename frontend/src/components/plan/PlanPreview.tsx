@@ -1,11 +1,12 @@
 import {useState} from 'react'
+import {useMessage} from '@/contexts/MessageContext'
 import {CloseOutlined} from '@ant-design/icons'
 import styles from './PlanPreview.module.css'
 
 interface PlanPreviewProps {
     plan: string
     onClose: () => void
-    onGenerate: (editedPlan: string) => void
+    onGenerate: (isEdit: boolean, editedPlan: string) => void
 }
 
 /**
@@ -14,14 +15,26 @@ interface PlanPreviewProps {
  * 보고서 계획을 편집하고 수정된 내용으로 보고서를 생성할 수 있습니다.
  */
 const PlanPreview = ({plan, onClose, onGenerate}: PlanPreviewProps) => {
+    const {antdMessage} = useMessage()
+
     const [editedPlan, setEditedPlan] = useState(plan)
 
     const handleGenerate = () => {
+        // 계획 내용 빈 값 확인
         if (!editedPlan.trim()) {
-            alert('계획 내용을 입력해주세요.')
+            antdMessage.warning('계획 내용을 입력해주세요.')
             return
         }
-        onGenerate(editedPlan)
+
+        // 수정 여부 확인
+        const isPlanEdited = editedPlan !== plan
+        if (isPlanEdited) {
+            console.log('계획이 수정되었음. 보고서 생성 요청!')
+        } else {
+            console.log('계획이 수정되지 않음. 보고서 생성 요청!')
+        }
+
+        onGenerate(isPlanEdited, editedPlan)
     }
 
     return (
