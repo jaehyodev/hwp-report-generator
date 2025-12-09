@@ -1,6 +1,6 @@
 import api from './api'
 import {API_BASE_URL, API_ENDPOINTS} from '@/constants/'
-import type {TopicCreate, TopicUpdate, Topic, TopicListResponse, AskRequest, AskResponse, PlanRequest, PlanResponse, TopicGenerationStatus, GenerateTopicBackgroundRequest} from '@/types/topic'
+import type {TopicUpdate, Topic, TopicListResponse, AskRequest, AskResponse, PlanRequest, PlanResponse, TopicGenerationStatus, ReportGenerationRequest, ReportGenerationResponse} from '@/types/topic'
 import type {ApiResponse} from '@/types/api'
 import { storage } from '@/utils/storage'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
@@ -11,53 +11,7 @@ import { fetchEventSource } from '@microsoft/fetch-event-source'
  * 토픽(대화 스레드) 관련 API 함수 모음
  */
 
-// Generate Topic 응답 타입
-interface GenerateTopicResponse {
-    topic_id: number
-    md_path: string
-}
-
 export const topicApi = {
-    /**
-     * 보고서 생성 - 미사용
-     * POST /api/topics/generate
-     * @param data 토픽 생성 데이터 (input_prompt, language)
-     * @returns 토픽 ID와 생성된 MD 파일 경로
-     */
-    generateTopic: async (data: TopicCreate): Promise<GenerateTopicResponse> => {
-        const response = await api.post<ApiResponse<GenerateTopicResponse>>(API_ENDPOINTS.GENERATE_TOPIC, data)
-
-        if (!response.data.success || !response.data.data) {
-            console.log('generateTopic > failed >', response.data)
-
-            throw new Error(response.data.error?.message || '보고서 생성에 실패했습니다.')
-        }
-
-        console.log('generateTopic > success >', response.data)
-
-        return response.data.data
-    },
-
-    /**
-     * 새 토픽 생성 (미사용)
-     * POST /api/topics
-     * @param data 토픽 생성 데이터
-     * @returns 생성된 토픽
-     */
-    createTopic: async (data: TopicCreate): Promise<Topic> => {
-        const response = await api.post<ApiResponse<Topic>>(API_ENDPOINTS.CREATE_TOPIC, data)
-
-        if (!response.data.success || !response.data.data) {
-            console.log('createTopic > failed >', response.data)
-
-            throw new Error(response.data.error?.message || '토픽 생성에 실패했습니다.')
-        }
-
-        console.log('createTopic > success >', response.data)
-
-        return response.data.data
-    },
-
     /**
      * 토픽 목록 조회
      * GET /api/topics
@@ -72,15 +26,17 @@ export const topicApi = {
         params.append('page', page.toString())
         params.append('page_size', pageSize.toString())
 
+        console.log('/api/topics >> request(status, page, pageSize): ', status, page, pageSize) 
+
         const response = await api.get<ApiResponse<TopicListResponse>>(`${API_ENDPOINTS.LIST_TOPICS}?${params.toString()}`)
 
         if (!response.data.success || !response.data.data) {
-            console.log('listTopics > failed >', response.data)
+            console.log('/api/topics >> failed >> response.data: ', response.data)
 
             throw new Error(response.data.error?.message || '토픽 목록 조회에 실패했습니다.')
         }
 
-        console.log('listTopics > success >', response.data)
+        console.log('/api/topics >> success >> response.data: ', response.data)
 
         return response.data.data
     },
@@ -92,15 +48,17 @@ export const topicApi = {
      * @returns 토픽 정보
      */
     getTopic: async (topicId: number): Promise<Topic> => {
+        console.log(`/api/topics/${topicId} >> request(topicId): `, topicId)
+
         const response = await api.get<ApiResponse<Topic>>(API_ENDPOINTS.GET_TOPIC(topicId))
 
         if (!response.data.success || !response.data.data) {
-            console.log('getTopic > failed >', response.data)
+            console.log(`/api/topics/${topicId} >> failed >> response.data: `, response.data)
 
             throw new Error(response.data.error?.message || '토픽 조회에 실패했습니다.')
         }
 
-        console.log('getTopic > success >', response.data)
+        console.log(`/api/topics/${topicId} >> success >> response.data: `, response.data)
 
         return response.data.data
     },
@@ -113,15 +71,17 @@ export const topicApi = {
      * @returns 업데이트된 토픽
      */
     updateTopic: async (topicId: number, data: TopicUpdate): Promise<Topic> => {
+        console.log(`/api/topics/${topicId} >> request(topicId, data): `, topicId, data)
+
         const response = await api.patch<ApiResponse<Topic>>(API_ENDPOINTS.UPDATE_TOPIC(topicId), data)
 
         if (!response.data.success || !response.data.data) {
-            console.log('updateTopic > failed >', response.data)
+            console.log(`/api/topics/${topicId} >> failed >> response.data: `, response.data)
 
             throw new Error(response.data.error?.message || '토픽 업데이트에 실패했습니다.')
         }
 
-        console.log('updateTopic > success >', response.data)
+        console.log(`/api/topics/${topicId} >> success >> response.data: `, response.data)
 
         return response.data.data
     },
@@ -132,15 +92,17 @@ export const topicApi = {
      * @param topicId 토픽 ID
      */
     deleteTopic: async (topicId: number): Promise<void> => {
+        console.log(`/api/topics/${topicId} >> request(topicId): `, topicId)
+
         const response = await api.delete<ApiResponse<void>>(API_ENDPOINTS.DELETE_TOPIC(topicId))
 
         if (!response.data.success) {
-            console.log('deleteTopic > failed >', response.data)
+            console.log(`/api/topics/${topicId} >> failed >> response.data: `, response.data)
 
             throw new Error(response.data.error?.message || '토픽 삭제에 실패했습니다.')
         }
 
-        console.log('deleteTopic > success >', response.data)
+        console.log(`/api/topics/${topicId} >> success >> response.data: `, response.data)
     },
 
     /**
@@ -151,82 +113,67 @@ export const topicApi = {
      * @returns AskResponse
      */
     ask: async (topicId: number, data: AskRequest): Promise<AskResponse> => {
-        // 요청 데이터 확인
-        console.log('ask >> request >> ', topicId, data)
+        console.log(`/api/ask/topics/${topicId}/ask >> request(topicId, data): `, topicId, data)
 
         const response = await api.post<ApiResponse<AskResponse>>(API_ENDPOINTS.ASK(topicId), data)
 
         if (!response.data.success || !response.data.data) {
-            console.log('ask >> failed >> response.data: ', response.data)
+            console.log(`/api/ask/topics/${topicId}/ask >> failed >> response.data: `, response.data)
 
             throw new Error(response.data.error?.message || '질문 전송에 실패했습니다.')
         }
 
-        console.log('ask >> success >> response.data: ', response.data)
+        console.log(`/api/ask/topics/${topicId}/ask >> success >> response.data: `, response.data)
 
         return response.data.data
     },
 
     /**
-     * 보고서 작성 계획 생성
+     * 보고서 계획 생성
      * POST /api/topics/plan
      * @param data Plan 요청 데이터 (template_id, custom_prompt)
      * @returns 보고서 작성 계획 (plan, sections)
      */
     generateTopicPlan: async (data: PlanRequest): Promise<PlanResponse> => {
-        console.log('/api/topics/plan >> request data >> ', data)
+        console.log('/api/topics/plan >> request(data): ', data)
 
         const response = await api.post<ApiResponse<PlanResponse>>(API_ENDPOINTS.TOPIC_PLAN, data)
 
         if (!response.data.success || !response.data.data) {
-            console.log('/api/topics/plan >> failed >> ', response.data)
+            console.log('/api/topics/plan >> failed >> response.data: ', response.data)
 
             throw new Error(response.data.error?.message || '보고서 계획 생성에 실패했습니다.')
         }
 
-        console.log('/api/topics/plan >> success >> ', response.data)
+        console.log('/api/topics/plan >> success >> response.data: ', response.data)
 
         return response.data.data
     },
 
     /**
-     * 백그라운드 보고서 생성 (v2.4+)
+     * 보고서 생성
      * POST /api/topics/:topicId/generate
      * @param topicId 토픽 ID
      * @param data
      * @returns 생성 상태 정보 (202 Accepted)
      */
-    generateTopicBackground: async (
-        topicId: number,
-        data: GenerateTopicBackgroundRequest
-    ): Promise<{
-        topic_id: number
-        status: string
-        message: string
-        status_check_url: string
-    }> => {
-        console.log('generateTopicBackground > request >', topicId, data)
+    generateReport: async (topicId: number, data: ReportGenerationRequest
+    ): Promise<ReportGenerationResponse> => {
+        console.log(`/api/topics/${topicId}/generate >> request(data): `, data)
 
-        const response = await api.post<
-            ApiResponse<{
-                topic_id: number
-                status: string
-                message: string
-                status_check_url: string
-            }>
-        >(API_ENDPOINTS.GENERATE_TOPIC_BACKGROUND(topicId), data)
+        const response = await api.post<ApiResponse<ReportGenerationResponse>>(API_ENDPOINTS.GENERATE_TOPIC_BACKGROUND(topicId), data)
 
         if (!response.data.success || !response.data.data) {
-            console.log('generateTopicBackground >> failed >> response.data: ', response.data)
+            console.log(`/api/topics/${topicId}/generate >> failed >> response.data: `, response.data)
             throw new Error(response.data.error?.message || '보고서 생성 요청에 실패했습니다.')
         }
 
-        console.log('generateTopicBackground >> success >> response.data: ', response.data)
+        console.log(`/api/topics/${topicId}/generate >> success >> response.data: `, response.data)
         return response.data.data
     },
 
     /**
-     * 보고서 생성 상태 조회 (v2.4+)
+     * 보고서 생성 상태 조회 - 미사용
      * GET /api/topics/:topicId/status
      * @param topicId 토픽 ID
      * @returns 생성 상태 정보
@@ -264,6 +211,18 @@ export const topicApi = {
         return response.data.data
     },
 
+    /**
+     * 보고서 생성 상태(SSE) 실시간 구독
+     * GET /api/topics/:topicId/status/stream
+     *
+     * 서버에서 보내는 SSE(EventStream)를 구독하여
+     * 생성 진행률, 완료 여부, 에러 상태 등을 실시간으로 전달받는다.
+     *
+     * @param topicId 조회할 토픽 ID
+     * @param onMessage 서버로부터 상태 이벤트를 받을 때 실행되는 콜백
+     * @param onError SSE 연결 오류가 발생했을 때 실행되는 콜백(선택)
+     * @returns SSE 연결을 중단하는 unsubscribe 함수
+     */
     getGenerationStatusStream: (
         topicId: number,
         onMessage: (status: TopicGenerationStatus) => void,
@@ -285,7 +244,9 @@ export const topicApi = {
             onmessage: (event) => {
                 try {
                     const data = JSON.parse(event.data)
-                    console.log('topicApi >> sse >> ', data)
+                    
+                    console.log(`/api/topics/${topicId}/status/stream >> request(data): `, data)
+                    
                     // event 타입에 따라 처리
                     if (data.event === 'status_update' || data.event === 'completion') {
                         onMessage({
@@ -297,11 +258,11 @@ export const topicApi = {
                         })
                     }
                 } catch (error) {
-                    console.error('SSE parsing error:', error)
+                    console.error(`/api/topics/${topicId}/status/stream >> error: `, error)
                 }
             },
             onerror: (error) => {
-                console.error('SSE connection error:', error)
+                console.error(`/api/topics/${topicId}/status/stream >> error: `, error)
                 if (onError) onError(error)
                 // 에러 시 재연결 하지 않도록 throw
                 throw error

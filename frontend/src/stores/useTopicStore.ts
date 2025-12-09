@@ -492,7 +492,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             return new Promise(async (resolve) => {
                 try {
                     // 1. 백그라운드 보고서 생성 API 호출
-                    await topicApi.generateTopicBackground(realTopicId, {
+                    await topicApi.generateReport(realTopicId, {
                         topic: plan.plan.split('\n')[0].replace('# ', '').replace(' 작성 계획', ''), // 첫 줄에서 주제 추출
                         plan: plan.plan,
                         isEdit,

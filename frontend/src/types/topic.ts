@@ -6,11 +6,6 @@
 
 export type TopicStatus = 'active' | 'archived' | 'deleted'
 
-export interface TopicCreate {
-    input_prompt: string
-    language?: string
-}
-
 export interface TopicUpdate {
     generated_title?: string
     status?: TopicStatus
@@ -84,10 +79,19 @@ export interface TopicGenerationStatus {
     error_message?: string
 }
 
-// 백그라운드 보고서 요청
-export interface GenerateTopicBackgroundRequest {
+// 보고서 생성 요청
+export interface ReportGenerationRequest {
     topic: string
     plan: string
     isEdit: boolean
     isWebSearch: boolean
 }
+
+// 보고서 생성 응답
+export interface ReportGenerationResponse {
+    topic_id: number
+    status: string
+    message: string
+    status_check_url: string
+}
+
