@@ -346,9 +346,9 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             const isWebSearch = true // 임시 true
             const tempTopicId = 0 // 임시 topicId 고정
 
-            // 1. 사용자 메시지를 UI에 표시
+            // 1. 사용자 메시지를 UI에 즉시 표시하기위해 생성
             const userMsgModel: MessageModel = {
-                id: undefined,
+                id: undefined, // 임시
                 topicId: tempTopicId,
                 role: 'user',
                 content: userMessage.trim(),
@@ -373,12 +373,10 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                 // 4. plan 상태에서 결과 가져와서 메시지로 추가,
                 const currentPlan = get().plan
                 if (currentPlan) {
-                    // realTopicId는 나중에 generateReportFromPlan에서 사용됨
-                    // 여기서는 계획 메시지를 topicId=0에 저장
-
+                    // assistant 메시지를 ui에 즉시 반영하기위해 생성
                     const assistantMsgModel: MessageModel = {
                         id: undefined,
-                        topicId: tempTopicId, // ⚠️ 먼저 tempTopicId=0에 저장
+                        topicId: currentPlan?.topic_id, // ⚠️ 먼저 tempTopicId=0에 저장
                         role: 'assistant',
                         content: currentPlan.plan,
                         seqNo: undefined,
@@ -387,12 +385,36 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                     }
 
                     // AI 응답 메시지를 tempTopicId=0에 추가
-                    addMessages(tempTopicId, [assistantMsgModel])
+                    addMessages(currentPlan?.topic_id, [assistantMsgModel])
 
-                    // selectedTopicId 업데이트 (계획 모드 유지: topicId=0)
-                    // ⚠️ 이 시점에는 아직 실제 토픽으로 전환하지 않음
-                    // 보고서 생성("예" 버튼) 시에만 realTopicId로 전환
+                    // 서버에서 메시지들을 가져옵니다.
+                    try {
+                        const messageStore = useMessageStore.getState()
+                        // 기존 메시지 및 아티팩트를 서버에서 가져와 표시합니다.
+                        const messagesResponse = await messageApi.listMessages(currentPlan?.topic_id)
+                        const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
+                        const artifactsResponse = await artifactApi.listArtifactsByTopic(currentPlan?.topic_id)
+                        const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
+                        messageStore.setMessages(currentPlan?.topic_id, serverMessages) // 실제 토픽 ID에 메시지 설정
+                        messageStore.clearMessages(0) // 임시 토픽(0)의 메시지 제거
+                    } catch (fetchError) {
+                        console.error("Failed to fetch initial messages for realTopicId:", fetchError);
+                        // 메시지 로딩 실패 시 에러 처리 (예: 사용자에게 알림)
+                        // return { ok: false, error: 'FAILED_TO_LOAD_MESSAGES', topicId: realTopicId };
+                    }
+
+                    // 계획 생성 시 토픽을 사이드바에 추가
+                    try {
+                        const newTopic = await topicApi.getTopic(currentPlan.topic_id)
+                        get().addTopic(newTopic)
+                    } catch (error) {
+                        console.error('Failed to fetch new topic for sidebar:', error)
+                        get().loadSidebarTopics()
+                    }
                 }
+
+                // 현재 토픽을 실제 토픽으로 변경
+                set({ selectedTopicId: currentPlan?.topic_id })
 
                 // PLAN 생성 완료 - GeneratingIndicator 숨기기
                 get().removeGeneratingTopicId(tempTopicId)
@@ -476,17 +498,29 @@ export const useTopicStore = create<TopicStore>((set, get) => {
             const { plan } = state
 
             if (!plan) {
-                // antdMessage.error('계획 정보가 없습니다.')
-                // topicId가 없으므로 0 사용
+                // plan이 없는 것은 topicId가 없으므로 0 사용
                 return { ok: false, error: 'NO_PLAN', topicId: 0 } 
             }
 
             const realTopicId = plan.topic_id
             const messageStore = useMessageStore.getState()
 
+            try {
+                // 기존 메시지 및 아티팩트를 서버에서 가져와 표시합니다.
+                const messagesResponse = await messageApi.listMessages(realTopicId)
+                const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
+                const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
+                const serverMessages = await enrichMessagesWithArtifacts(messageModels, artifactsResponse.artifacts)
+                messageStore.setMessages(realTopicId, serverMessages) // 실제 토픽 ID에 메시지 설정
+                messageStore.clearMessages(0) // 임시 토픽(0)의 메시지 제거
+            } catch (fetchError) {
+                console.error("Failed to fetch initial messages for realTopicId:", fetchError);
+                // 메시지 로딩 실패 시 에러 처리 (예: 사용자에게 알림)
+                // return { ok: false, error: 'FAILED_TO_LOAD_MESSAGES', topicId: realTopicId };
+            }
+
             // AI 응답 대기 상태 설정 (GeneratingIndicator 표시)
-            // 보고서 생성 버튼 클릭 시점에는 selectedTopicId=0 (계획 모드)
-            get().addGeneratingTopicId(0)
+            get().addGeneratingTopicId(realTopicId) // 로딩 인디케이터를 실제 토픽 ID에 연결
 
             // 💡 Promise로 감싸서 최종 결과를 기다리도록 합니다. 외부 try...catch를 제거하고 Promise 내부에서 처리합니다.
             return new Promise(async (resolve) => {
@@ -516,7 +550,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 errorMessage: status.error_message
                             });
 
-                            if (status.status === 'completed') {                               
+                            if (status.status === 'completed') {
                                 isCompleted = true
                                 unsubscribe()
 
@@ -528,16 +562,16 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 messageStore.setMessages(realTopicId, serverMessages)
                                 messageStore.clearMessages(0)
 
+                                // 보고서 생성 완료 시 토픽 정보 업데이트 (이미 사이드바에 있으므로 addTopic이 아닌 updateTopicInBothLists)
                                 try {
-                                    const newTopic = await topicApi.getTopic(realTopicId)
-                                    get().addTopic(newTopic)
+                                    const updatedTopic = await topicApi.getTopic(realTopicId)
+                                    get().updateTopicInBothLists(realTopicId, updatedTopic)
                                 } catch (error) {
-                                    console.error('Failed to fetch new topic for sidebar:', error)
-                                    get().loadSidebarTopics()
+                                    console.error('Failed to update topic after report generation:', error)
                                 }
 
-                                set({ selectedTopicId: realTopicId })
-                                get().removeGeneratingTopicId(0)
+                                // set({ selectedTopicId: realTopicId })
+                                get().removeGeneratingTopicId(realTopicId)
 
                                 // ✅ Promise resolve: 성공 상태를 반환
                                 resolve({ ok: true, topicId: realTopicId })
@@ -545,13 +579,13 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 isCompleted = true
                                 unsubscribe()
 
-                                get().removeGeneratingTopicId(0)
+                                get().removeGeneratingTopicId(realTopicId)
                                 messageStore.setGeneratingReportStatus(undefined)
 
                                 // ✅ Promise resolve: 비즈니스 로직 상 ok: false를 반환하여 호출자에게 알림
                                 resolve({ ok: false, error: status.error_message || '보고서 생성 실패', topicId: realTopicId })
                             }
-                        }, 
+                        },
                         // SSE 에러 핸들러
                         (error) => {
                             if (isCompleted) return
@@ -560,7 +594,7 @@ export const useTopicStore = create<TopicStore>((set, get) => {
 
                             console.error('SSE error:', error)
 
-                            get().removeGeneratingTopicId(0)
+                            get().removeGeneratingTopicId(realTopicId)
                             messageStore.setGeneratingReportStatus(undefined)
 
                             // ✅ Promise resolve: 에러 상태 반환
@@ -570,8 +604,8 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                 } catch (error: any) {
                     // 4. 최초 topicApi.generateTopicBackground 호출 실패 처리
                     console.error('보고서 생성 요청 실패:', error)
-                    get().removeGeneratingTopicId(0)
-                    
+                    get().removeGeneratingTopicId(realTopicId)
+
                     // ✅ Promise resolve: 실패 상태 반환
                     resolve({ ok: false, error: error, topicId: realTopicId })
                 }

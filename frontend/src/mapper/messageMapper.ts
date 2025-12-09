@@ -48,6 +48,7 @@ export const mapMessageResponsesToModels = (responses: MessageResponse[]): Messa
  * - artifacts에서 content가 있는 MD artifact를 찾아 reportData 생성
  * - reportData는 UI 레이어에서만 사용하는 편의 필드
  * - clientId는 React key로 사용되어 메시지 순서 변경 시에도 안정적인 렌더링 보장
+ * - isPlan이 이미 설정되어 있으면 유지, 없으면 undefined
  */
 export const mapMessageModelToUI = (model: MessageModel, clientId: number): MessageUI => {
     // artifacts에서 content가 로드된 MD artifact 찾기
@@ -58,6 +59,7 @@ export const mapMessageModelToUI = (model: MessageModel, clientId: number): Mess
         clientId,
         timestamp: new Date(model.createdAt),
         isOutline: false, // 기본값
+        isPlan: model.isPlan, // MessageModel의 isPlan을 그대로 전달
         reportData: mdArtifact && mdArtifact.content
             ? {
                   reportId: mdArtifact.id,

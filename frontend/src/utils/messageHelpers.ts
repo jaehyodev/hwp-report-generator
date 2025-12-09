@@ -95,7 +95,21 @@ export const enrichMessageWithArtifact = async (message: MessageModel, artifacts
  * - 내부적으로 `Promise.all`을 사용하여 병렬 처리
  * - 각 메시지는 독립적으로 처리되며, 일부 실패해도 나머지는 정상 처리됨
  * - 빈 배열을 전달하면 빈 배열 반환
+ * - assistant의 첫 번째 메시지는 자동으로 isPlan: true로 설정됨
  */
 export const enrichMessagesWithArtifacts = async (messages: MessageModel[], artifacts: Artifact[]): Promise<MessageModel[]> => {
-    return Promise.all(messages.map((message) => enrichMessageWithArtifact(message, artifacts)))
+    // assistant의 첫 번째 메시지 찾기
+    const firstAssistantIndex = messages.findIndex(msg => msg.role === 'assistant')
+
+    const enrichedMessages = await Promise.all(messages.map((message) => enrichMessageWithArtifact(message, artifacts)))
+
+    // assistant의 첫 번째 메시지에 isPlan: true 설정
+    if (firstAssistantIndex !== -1) {
+        enrichedMessages[firstAssistantIndex] = {
+            ...enrichedMessages[firstAssistantIndex],
+            isPlan: true
+        }
+    }
+
+    return enrichedMessages
 }

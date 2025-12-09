@@ -48,16 +48,14 @@ export const useChatActions = ({selectedTopicId, setSelectedTopicId, refreshMess
 
         const messageStore = useMessageStore.getState()
         const topicStore = useTopicStore.getState() 
-        
-        //topicStore.addGeneratingTopicId(selectedTopicId) // 메시지 생성 중인 쓰레드 목록에 쓰레드 추가
 
-        topicStore.addGeneratingTopicId(selectedTopicId)
+        topicStore.addGeneratingTopicId(selectedTopicId) // 메시지 생성 중인 쓰레드 목록에 쓰레드 추가
 
         // 보고서 생성 이후 메시지 체이닝
 
         // 임시 사용자 메시지 생성 - UI에 즉시 표시용
         const userMessage: MessageModel = {
-            id: undefined, // 임시 메시지 표시 - 서버 응답 후 메시지를 제거 후, 새로 추가
+            id: undefined, // 임시 메시지 표시
             topicId: selectedTopicId,
             role: 'user',
             content: message.trim(),
