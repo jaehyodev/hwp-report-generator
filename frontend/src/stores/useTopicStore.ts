@@ -556,14 +556,6 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 messageStore.setMessages(realTopicId, serverMessages)
                                 messageStore.clearMessages(0)
 
-                                // 3-3. 보고서 생성 완료 시 토픽 정보 업데이트 (이미 사이드바에 있으므로 addTopic이 아닌 updateTopicInBothLists)
-                                try {
-                                    const updatedTopic = await topicApi.getTopic(realTopicId)
-                                    get().updateTopicInBothLists(realTopicId, updatedTopic)
-                                } catch (error) {
-                                    console.error('Failed to update topic after report generation:', error)
-                                }
-
                                 // ✅ Promise resolve: 성공 상태를 반환
                                 resolve({ ok: true, topicId: realTopicId })
                             } else if (status.status === 'failed') {
