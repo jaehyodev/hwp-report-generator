@@ -545,7 +545,10 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 isCompleted = true
                                 unsubscribe()
 
-                                // 3. 완료 시 데이터 병합 및 상태 업데이트 로직
+                                // 3-1. GeneratingIndicator 먼저 제거 (UI 순서: indicator 제거 → 메시지 표시)
+                                get().removeGeneratingTopicId(realTopicId)
+
+                                // 3-2. 완료 시 데이터 병합 및 상태 업데이트 로직
                                 const messagesResponse = await messageApi.listMessages(realTopicId)
                                 const messageModels = mapMessageResponsesToModels(messagesResponse.messages)
                                 const artifactsResponse = await artifactApi.listArtifactsByTopic(realTopicId)
@@ -553,16 +556,13 @@ export const useTopicStore = create<TopicStore>((set, get) => {
                                 messageStore.setMessages(realTopicId, serverMessages)
                                 messageStore.clearMessages(0)
 
-                                // 보고서 생성 완료 시 토픽 정보 업데이트 (이미 사이드바에 있으므로 addTopic이 아닌 updateTopicInBothLists)
+                                // 3-3. 보고서 생성 완료 시 토픽 정보 업데이트 (이미 사이드바에 있으므로 addTopic이 아닌 updateTopicInBothLists)
                                 try {
                                     const updatedTopic = await topicApi.getTopic(realTopicId)
                                     get().updateTopicInBothLists(realTopicId, updatedTopic)
                                 } catch (error) {
                                     console.error('Failed to update topic after report generation:', error)
                                 }
-
-                                // set({ selectedTopicId: realTopicId })
-                                get().removeGeneratingTopicId(realTopicId)
 
                                 // ✅ Promise resolve: 성공 상태를 반환
                                 resolve({ ok: true, topicId: realTopicId })
