@@ -201,17 +201,11 @@ npm run build
 2. **Context** - `src/context/`에 새 Context Provider 생성
 3. **Hook** - `src/hooks/`에 커스텀 훅 생성
 
-## 📝 코드 컨벤션
+## 테스트
 
-- **함수형 컴포넌트** - 모든 컴포넌트는 함수형 컴포넌트로 작성
-- **TypeScript strict mode** - 타입 안정성 엄격히 준수
-- **ESLint/Prettier** - 코드 포맷팅 규칙 준수
-- **명확한 네이밍** - 변수/함수/컴포넌트 이름 명확히
-- **컴포넌트 구조**
-  - Props 인터페이스 정의 (타입 안정성)
-  - Hook 사용 (상단에 배치)
-  - Event Handler (handle* prefix)
-  - JSX 반환 (명확한 구조)
+- **회원가입, 로그인, 로그아웃, 사용자 접근 허용, 비밀번호 초기화**
+- **계획 생성, 계획 수정, 계획 기반 보고서 생성, 보고서 수정 요청, 보고서 다운로드**
+- **템플릿 업로드, 템플릿 삭제, 템플릿 수정(프롬프트), 템플릿 프롬프트 변경 시 보고서 생성**
 
 ## 🏗️ 주요 기술적 특징
 
@@ -286,12 +280,13 @@ VITE_API_BASE_URL=https://your-backend-api.com
 
 ## 🎯 향후 개선 사항
 
-- [ ] React Query 통합 (서버 상태 관리 개선)
-- [ ] E2E 테스트 (Playwright/Cypress)
-- [ ] PWA 지원 (오프라인 모드)
+- [ ] 보고서 생성 중단 기능 (다른 토픽으로 이동 시 중단해야하나?)
+- [ ] 실시간 협업 기능 (WebSocket)
+- [ ] React Query 통합 (서버 상태 관리 개선) ?
+- [ ] E2E 테스트 (Playwright/Cypress) ?
+- [ ] PWA 지원 (오프라인 모드) ?
 - [ ] 다국어 지원 (i18n)
 - [ ] 보고서 미리보기 개선 (PDF 변환)
-- [ ] 실시간 협업 기능 (WebSocket)
 
 ---
 
