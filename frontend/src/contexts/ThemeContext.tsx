@@ -45,6 +45,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // 현재 테마에 맞는 Ant Design 테마 설정 선택
   const currentTheme = theme === 'light' ? lightTheme : darkTheme;
+  console.log('theme:', currentTheme)
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
