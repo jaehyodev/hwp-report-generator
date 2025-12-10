@@ -148,6 +148,7 @@ const TemplateDetailModal: React.FC<TemplateDetailModalProps> = ({open, template
             open={open}
             onCancel={onClose}
             width={700}
+            centered
             closable={!isSaving}
             maskClosable={!isSaving}
             keyboard={!isSaving}
