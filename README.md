@@ -165,10 +165,9 @@ npm run dev
 
 프론트엔드 접속:
 ```
-http://localhost:5173      # React 개발 서버
+http://localhost:5173               # 개발 서버
+https://hwpreportgen.netlify.app/   # 배포 서버
 ```
-
-> **참고**: 프론트엔드는 Vite 프록시를 통해 `http://localhost:8000`의 백엔드 API와 통신합니다.
 
 ## 사용 방법
 
