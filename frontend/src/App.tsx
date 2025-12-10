@@ -37,86 +37,84 @@ const App = () => {
     return (
         // 테마 Provider: 다크/라이트 테마 관리 (ConfigProvider 포함)
         <ThemeProvider>
-            <StyleProvider hashPriority="high">
-                {/* Ant Design App: Modal, message 같은 전역 컴포넌트 사용 가능하게 함 */}
-                <AntdApp>
-                    {/* Message Context: 테마 적용된 antdMessage 인스턴스 제공 */}
-                    <MessageProvider>
-                        {/* 인증 Context: 로그인 사용자 정보를 앱 전체에서 사용 가능 */}
-                        <AuthProvider>
-                        {/* 라우터: URL에 따라 다른 페이지를 보여줌 */}
-                        <Router>
-                                <Routes>
-                                    {/* 공개 라우트: 로그인 안 한 사람만 접근 가능 */}
-                                    <Route
-                                        path="/login"
-                                        element={
-                                            <PublicRoute>
-                                                <LoginPage />
-                                            </PublicRoute>
-                                        }
-                                        />
-                                    <Route
-                                        path="/register"
-                                        element={
-                                            <PublicRoute>
-                                                <RegisterPage />
-                                            </PublicRoute>
-                                        }
-                                        />
+            {/* Ant Design App: Modal, message 같은 전역 컴포넌트 사용 가능하게 함 */}
+            <AntdApp>
+                {/* Message Context: 테마 적용된 antdMessage 인스턴스 제공 */}
+                <MessageProvider>
+                    {/* 인증 Context: 로그인 사용자 정보를 앱 전체에서 사용 가능 */}
+                    <AuthProvider>
+                    {/* 라우터: URL에 따라 다른 페이지를 보여줌 */}
+                    <Router>
+                            <Routes>
+                                {/* 공개 라우트: 로그인 안 한 사람만 접근 가능 */}
+                                <Route
+                                    path="/login"
+                                    element={
+                                        <PublicRoute>
+                                            <LoginPage />
+                                        </PublicRoute>
+                                    }
+                                    />
+                                <Route
+                                    path="/register"
+                                    element={
+                                        <PublicRoute>
+                                            <RegisterPage />
+                                        </PublicRoute>
+                                    }
+                                    />
 
-                                    {/* 보호된 라우트: 로그인한 사람만 접근 가능 */}
-                                    <Route
-                                        path="/"
-                                        element={
-                                            <PrivateRoute>
-                                                <MainPage />
-                                            </PrivateRoute>
-                                        }
-                                        />
-                                    <Route
-                                        path="/change-password"
-                                        element={
-                                            <PrivateRoute>
-                                                <ChangePasswordPage />
-                                            </PrivateRoute>
-                                        }
-                                        />
-                                    <Route
-                                        path="/topics"
-                                        element={
-                                            <PrivateRoute>
-                                                <TopicListPage />
-                                            </PrivateRoute>
-                                        }
-                                        />
-                                    <Route
-                                        path="/templates"
-                                        element={
-                                            <PrivateRoute>
-                                                <TemplateManagementPage />
-                                            </PrivateRoute>
-                                        }
-                                        />
+                                {/* 보호된 라우트: 로그인한 사람만 접근 가능 */}
+                                <Route
+                                    path="/"
+                                    element={
+                                        <PrivateRoute>
+                                            <MainPage />
+                                        </PrivateRoute>
+                                    }
+                                    />
+                                <Route
+                                    path="/change-password"
+                                    element={
+                                        <PrivateRoute>
+                                            <ChangePasswordPage />
+                                        </PrivateRoute>
+                                    }
+                                    />
+                                <Route
+                                    path="/topics"
+                                    element={
+                                        <PrivateRoute>
+                                            <TopicListPage />
+                                        </PrivateRoute>
+                                    }
+                                    />
+                                <Route
+                                    path="/templates"
+                                    element={
+                                        <PrivateRoute>
+                                            <TemplateManagementPage />
+                                        </PrivateRoute>
+                                    }
+                                    />
 
-                                    {/* 관리자 전용 라우트: 관리자만 접근 가능 */}
-                                    <Route
-                                        path="/admin"
-                                        element={
-                                            <PrivateRoute requireAdmin={true}>
-                                                <AdminPage />
-                                            </PrivateRoute>
-                                        }
-                                        />
+                                {/* 관리자 전용 라우트: 관리자만 접근 가능 */}
+                                <Route
+                                    path="/admin"
+                                    element={
+                                        <PrivateRoute requireAdmin={true}>
+                                            <AdminPage />
+                                        </PrivateRoute>
+                                    }
+                                    />
 
-                                    {/* 존재하지 않는 URL은 홈으로 리다이렉트 */}
-                                    <Route path="*" element={<Navigate to="/" replace />} />
-                                </Routes>
-                            </Router>
-                        </AuthProvider>
-                    </MessageProvider>
-                </AntdApp>
-            </StyleProvider>
+                                {/* 존재하지 않는 URL은 홈으로 리다이렉트 */}
+                                <Route path="*" element={<Navigate to="/" replace />} />
+                            </Routes>
+                        </Router>
+                    </AuthProvider>
+                </MessageProvider>
+            </AntdApp>
         </ThemeProvider>
     )
 }
