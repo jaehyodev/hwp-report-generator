@@ -372,9 +372,6 @@ const MainPage = () => {
         setIsLeftSidebarOpen(!isLeftSidebarOpen)
     }
 
-    console.log('showoutlinebuttons:' , showOutlineButtons)
-    console.log('plan', plan)
-
     return (
         <MainLayout sidebarCollapsed={!isLeftSidebarOpen}>
             {/* Dim Overlay - 모바일/태블릿에서 사이드바 열렸을 때 */}

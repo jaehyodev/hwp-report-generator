@@ -40,16 +40,22 @@ const Sidebar = ({isOpen, onToggle, onTopicSelect, onNewTopic}: SidebarProps) =>
     // Use Zustand store for topic management - Sidebar용 상태만 사용
     const {sidebarTopics, sidebarLoading, selectedTopicId, loadSidebarTopics} = useTopicStore()
     const setUseTemplate = useTopicStore(state => state.setUseTemplate)
+    const setIsTemplateSelected = useTopicStore(state => state.setIsTemplateSelected)
+    const setSelectedTemplate = useTopicStore(state => state.setSelectedTemplate)
 
     // 템플릿을 사용하여 쓰레드 시작
     const handleTemplateNewTopic = () => {
         setUseTemplate(true)
+        setIsTemplateSelected(false)
+        setSelectedTemplate(null)
         onNewTopic()
     }
     
     // 템플릿 없이 쓰레드 시작
     const handleQuickNewTopic = () => {
         setUseTemplate(false)
+        setIsTemplateSelected(false)
+        setSelectedTemplate(null)
         onNewTopic()
     }
 
